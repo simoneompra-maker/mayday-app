@@ -1,0 +1,1461 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>MAYDAY</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#e63946">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="MAYDAY">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:      #0d0d1a;
+      --bg2:     #16213e;
+      --bg3:     #1e2d50;
+      --red:     #e63946;
+      --red-dk:  #c1121f;
+      --blue:    #457b9d;
+      --text:    #eaeaea;
+      --dim:     #7a8799;
+      --ok:      #2a9d8f;
+      --warn:    #e9c46a;
+      --border:  rgba(255,255,255,0.08);
+      --r:       12px;
+      --nav:     60px;
+      --hdr:     52px;
+    }
+
+    html, body {
+      height: 100%; height: 100dvh;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      overflow: hidden;
+    }
+
+    #app {
+      height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ── Header ── */
+    .hdr {
+      height: var(--hdr);
+      background: var(--bg2);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      padding: 0 16px;
+      flex-shrink: 0;
+      gap: 0;
+    }
+    .hdr-logo {
+      font-size: 20px;
+      font-weight: 900;
+      color: var(--red);
+      letter-spacing: 4px;
+      min-width: 90px;
+    }
+    .hdr-title {
+      flex: 1;
+      text-align: center;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--dim);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    .hdr-action {
+      min-width: 90px;
+      display: flex;
+      justify-content: flex-end;
+    }
+
+    /* ── Views ── */
+    .view {
+      flex: 1;
+      overflow-y: auto;
+      overflow-x: hidden;
+      display: none;
+      flex-direction: column;
+      padding-bottom: calc(var(--nav) + env(safe-area-inset-bottom, 0px) + 8px);
+    }
+    .view.on { display: flex; }
+
+    /* ── Home ── */
+    .rec-zone {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 24px 20px 16px;
+      gap: 12px;
+    }
+    .rec-status {
+      font-size: 12px;
+      color: var(--dim);
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      height: 16px;
+    }
+    .btn-rec {
+      width: 148px; height: 148px;
+      border-radius: 50%;
+      border: none;
+      background: var(--red);
+      color: #fff;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      cursor: pointer;
+      outline: none;
+      -webkit-tap-highlight-color: transparent;
+      transition: background .2s, transform .1s;
+      box-shadow: 0 0 0 0 rgba(230,57,70,.4);
+    }
+    .btn-rec:active { transform: scale(.95); }
+    .btn-rec.rec  { background: var(--red-dk); animation: pulse 1.4s infinite; }
+    .btn-rec.proc { background: var(--blue); animation: none; }
+    .btn-rec-ico  { font-size: 38px; line-height: 1; }
+    .btn-rec-lbl  { font-size: 12px; font-weight: 900; letter-spacing: 3px; }
+
+    @keyframes pulse {
+      0%   { box-shadow: 0 0 0  0   rgba(230,57,70,.5); }
+      70%  { box-shadow: 0 0 0 28px rgba(230,57,70,0);  }
+      100% { box-shadow: 0 0 0  0   rgba(230,57,70,0);  }
+    }
+
+    .rec-timer {
+      font-size: 26px;
+      font-weight: 300;
+      color: var(--red);
+      letter-spacing: 4px;
+      font-variant-numeric: tabular-nums;
+      height: 32px;
+    }
+    .waveform {
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      height: 36px;
+      opacity: 0;
+      transition: opacity .3s;
+    }
+    .waveform.on { opacity: 1; }
+    .wbar {
+      width: 3px;
+      background: var(--red);
+      border-radius: 2px;
+      min-height: 4px;
+      transition: height .08s;
+    }
+
+    /* ── Cards ── */
+    .sec-lbl {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      color: var(--dim);
+      padding: 12px 16px 6px;
+    }
+    .card {
+      margin: 0 12px 8px;
+      padding: 13px;
+      background: var(--bg2);
+      border-radius: var(--r);
+      border: 1px solid var(--border);
+    }
+    .card-hd {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 5px;
+    }
+    .badge {
+      font-size: 9px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      padding: 2px 7px;
+      border-radius: 20px;
+    }
+    .b-apt  { background: rgba(69,123,157,.2); color: var(--blue); }
+    .b-task { background: rgba(233,196,106,.2); color: var(--warn); }
+    .b-note { background: rgba(42,157,143,.2);  color: var(--ok);   }
+    .pdot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .p-alta  { background: var(--red);  }
+    .p-media { background: var(--warn); }
+    .p-bassa { background: var(--ok);   }
+    .card-cli  { font-size: 14px; font-weight: 700; color: var(--text); flex: 1; }
+    .card-meta { font-size: 11px; color: var(--dim); margin-bottom: 3px; }
+    .card-desc { font-size: 13px; color: var(--text); line-height: 1.4; }
+    .card-acts { display: flex; gap: 4px; justify-content: flex-end; margin-top: 8px; }
+    .card.done  { opacity: .5; }
+    .card.done .card-cli { text-decoration: line-through; }
+
+    .icobtn {
+      background: none;
+      border: none;
+      color: var(--dim);
+      font-size: 17px;
+      padding: 4px 7px;
+      border-radius: 6px;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+      transition: color .15s, background .15s;
+    }
+    .icobtn:active { background: var(--border); color: var(--text); }
+    .icobtn.del:active { color: var(--red); }
+
+    .del-confirm {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px;
+      background: rgba(230,57,70,.1);
+      border-radius: 8px;
+      color: var(--red);
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .del-confirm button {
+      border: none;
+      border-radius: 6px;
+      padding: 5px 12px;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    /* ── Filters ── */
+    .filters {
+      display: flex;
+      gap: 7px;
+      padding: 10px 12px;
+      overflow-x: auto;
+      flex-shrink: 0;
+      scrollbar-width: none;
+    }
+    .filters::-webkit-scrollbar { display: none; }
+    .chip {
+      flex-shrink: 0;
+      padding: 5px 14px;
+      border-radius: 20px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--dim);
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+      transition: all .15s;
+    }
+    .chip.on { background: var(--red); border-color: var(--red); color: #fff; }
+
+    /* ── Empty ── */
+    .empty {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      padding: 50px 32px;
+      color: var(--dim);
+      text-align: center;
+    }
+    .empty-ico { font-size: 44px; }
+    .empty-txt { font-size: 13px; line-height: 1.5; }
+
+    /* ── Bottom Nav ── */
+    #bnav {
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      height: calc(var(--nav) + env(safe-area-inset-bottom, 0px));
+      padding-bottom: env(safe-area-inset-bottom, 0px);
+      background: var(--bg2);
+      border-top: 1px solid var(--border);
+      display: flex;
+      z-index: 100;
+    }
+    .nitem {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 2px;
+      background: none;
+      border: none;
+      color: var(--dim);
+      font-size: 9px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+      transition: color .15s;
+    }
+    .nitem.on { color: var(--red); }
+    .nitem-ico { font-size: 21px; line-height: 1; }
+
+    /* ── Modal ── */
+    #overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.72);
+      z-index: 200;
+      display: none;
+      align-items: flex-end;
+      backdrop-filter: blur(3px);
+      -webkit-backdrop-filter: blur(3px);
+    }
+    #overlay.on { display: flex; }
+    .sheet {
+      width: 100%;
+      max-height: 92dvh;
+      background: var(--bg2);
+      border-radius: 20px 20px 0 0;
+      padding: 10px 16px calc(24px + env(safe-area-inset-bottom, 0px));
+      overflow-y: auto;
+      animation: sup .28s ease;
+    }
+    @keyframes sup { from { transform: translateY(100%); } to { transform: translateY(0); } }
+    .sheet-handle {
+      width: 38px; height: 4px;
+      background: var(--border);
+      border-radius: 2px;
+      margin: 0 auto 14px;
+    }
+    .sheet-title {
+      font-size: 17px;
+      font-weight: 800;
+      margin-bottom: 14px;
+      color: var(--text);
+    }
+
+    /* ── Forms ── */
+    .fg { margin-bottom: 12px; }
+    .flbl {
+      display: block;
+      font-size: 10px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--dim);
+      margin-bottom: 5px;
+    }
+    .finp {
+      width: 100%;
+      padding: 11px 13px;
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      color: var(--text);
+      font-size: 15px;
+      font-family: inherit;
+      outline: none;
+      transition: border-color .15s;
+    }
+    .finp:focus { border-color: var(--red); }
+    .finp::placeholder { color: var(--dim); }
+    textarea.finp { resize: vertical; min-height: 76px; }
+
+    .btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      padding: 13px 18px;
+      border-radius: var(--r);
+      border: none;
+      font-size: 14px;
+      font-weight: 800;
+      cursor: pointer;
+      transition: opacity .15s, transform .1s;
+      -webkit-tap-highlight-color: transparent;
+      font-family: inherit;
+    }
+    .btn:active { transform: scale(.97); }
+    .btn:disabled { opacity: .45; }
+    .btn-pr  { background: var(--red);  color: #fff; width: 100%; }
+    .btn-sec { background: var(--bg3);  color: var(--text); border: 1px solid var(--border); width: 100%; }
+    .btn-ok  { background: var(--ok);   color: #fff; width: 100%; }
+    .btn-row { display: flex; gap: 9px; margin-top: 14px; }
+    .btn-row .btn { flex: 1; }
+
+    /* ── Transcription box ── */
+    .tbox {
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      padding: 12px 13px;
+      font-size: 13px;
+      line-height: 1.5;
+      color: var(--text);
+      margin-bottom: 12px;
+      min-height: 50px;
+    }
+
+    /* ── Extraction type badge ── */
+    .ex-type {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 800;
+      margin-bottom: 12px;
+    }
+    .ex-apt  { background: rgba(69,123,157,.2); color: var(--blue); }
+    .ex-task { background: rgba(233,196,106,.2); color: var(--warn); }
+    .ex-note { background: rgba(42,157,143,.2);  color: var(--ok);  }
+
+    /* ── Contacts ── */
+    .citem {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--border);
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .cavatar {
+      width: 38px; height: 38px;
+      border-radius: 50%;
+      background: var(--blue);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 15px;
+      font-weight: 800;
+      color: #fff;
+      flex-shrink: 0;
+    }
+    .cname  { font-size: 14px; font-weight: 700; }
+    .cphone { font-size: 11px; color: var(--dim); }
+
+    /* ── Settings ── */
+    .sblock { padding: 16px; }
+    .sblock + .sblock { border-top: 1px solid var(--border); }
+    .stitle {
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--red);
+      margin-bottom: 12px;
+    }
+    .hint { margin-top: 5px; font-size: 11px; color: var(--dim); line-height: 1.4; }
+    .gstat {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 9px 13px;
+      background: var(--bg3);
+      border-radius: var(--r);
+      font-size: 12px;
+      font-weight: 600;
+      margin-bottom: 10px;
+    }
+    .sdot { width: 8px; height: 8px; border-radius: 50%; background: var(--dim); }
+    .sdot.on { background: var(--ok); }
+    .btn-google {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 16px;
+      background: #fff;
+      color: #333;
+      border: none;
+      border-radius: var(--r);
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      width: 100%;
+      justify-content: center;
+      font-family: inherit;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    /* ── Toast ── */
+    #toast {
+      position: fixed;
+      bottom: calc(var(--nav) + env(safe-area-inset-bottom, 0px) + 14px);
+      left: 50%;
+      transform: translateX(-50%) translateY(12px);
+      background: var(--bg3);
+      color: var(--text);
+      padding: 9px 18px;
+      border-radius: 30px;
+      font-size: 13px;
+      font-weight: 700;
+      opacity: 0;
+      transition: opacity .2s, transform .2s;
+      pointer-events: none;
+      z-index: 400;
+      white-space: nowrap;
+      border: 1px solid var(--border);
+      max-width: calc(100vw - 40px);
+      text-overflow: ellipsis;
+      overflow: hidden;
+    }
+    #toast.on { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    /* ── Scrollbar ── */
+    ::-webkit-scrollbar { width: 3px; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+    /* ── Spinner ── */
+    .spin {
+      width: 22px; height: 22px;
+      border: 2px solid rgba(255,255,255,.3);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: rot .7s linear infinite;
+      display: inline-block;
+    }
+    @keyframes rot { to { transform: rotate(360deg); } }
+
+    /* ── Row layout helper ── */
+    .row { display: flex; gap: 10px; }
+    .row .fg { flex: 1; }
+  </style>
+</head>
+<body>
+<div id="app">
+
+  <!-- HEADER -->
+  <header class="hdr">
+    <div class="hdr-logo">MAYDAY</div>
+    <div class="hdr-title" id="hdr-title">Registrazione</div>
+    <div class="hdr-action"></div>
+  </header>
+
+  <!-- HOME -->
+  <section class="view on" id="v-home">
+    <div class="rec-zone">
+      <div class="rec-status" id="rec-status">Tocca per registrare</div>
+
+      <button class="btn-rec" id="btn-rec" onclick="A.toggleRec()">
+        <span class="btn-rec-ico" id="rec-ico">🎙️</span>
+        <span class="btn-rec-lbl" id="rec-lbl">REGISTRA</span>
+      </button>
+
+      <div class="rec-timer" id="rec-timer"></div>
+      <div class="waveform" id="waveform"></div>
+    </div>
+
+    <div class="sec-lbl">Ultimi elementi</div>
+    <div id="recent"></div>
+  </section>
+
+  <!-- AGENDA -->
+  <section class="view" id="v-agenda">
+    <div class="filters">
+      <button class="chip on" onclick="A.fAppt(this,'all')">Tutti</button>
+      <button class="chip" onclick="A.fAppt(this,'oggi')">Oggi</button>
+      <button class="chip" onclick="A.fAppt(this,'sett')">Settimana</button>
+      <button class="chip" onclick="A.fAppt(this,'fut')">Futuri</button>
+      <button class="chip" onclick="A.fAppt(this,'pass')">Passati</button>
+    </div>
+    <div id="appt-list"></div>
+  </section>
+
+  <!-- TASK -->
+  <section class="view" id="v-task">
+    <div class="filters">
+      <button class="chip on" onclick="A.fTask(this,'all')">Tutti</button>
+      <button class="chip" onclick="A.fTask(this,'pend')">Da fare</button>
+      <button class="chip" onclick="A.fTask(this,'done')">Completati</button>
+    </div>
+    <div id="task-list"></div>
+  </section>
+
+  <!-- NOTE -->
+  <section class="view" id="v-note">
+    <div style="padding:10px 12px 0">
+      <input type="search" class="finp" id="note-search"
+             placeholder="🔍  Cerca cliente o parola chiave…"
+             oninput="A.searchNotes(this.value)">
+    </div>
+    <div id="note-list" style="margin-top:10px"></div>
+  </section>
+
+  <!-- IMPOSTAZIONI -->
+  <section class="view" id="v-cfg">
+    <div class="sblock">
+      <div class="stitle">API Keys</div>
+
+      <div class="fg">
+        <label class="flbl">Groq API Key — Trascrizione vocale</label>
+        <input type="password" class="finp" id="s-groq"
+               placeholder="gsk_…"
+               onchange="A.setSetting('groqKey',this.value)">
+        <div class="hint">Ottieni da <strong>console.groq.com</strong> · Modello: whisper-large-v3-turbo</div>
+      </div>
+
+      <div class="fg">
+        <label class="flbl">Gemini API Key — Estrazione intelligente</label>
+        <input type="password" class="finp" id="s-gem"
+               placeholder="AIza…"
+               onchange="A.setSetting('geminiKey',this.value)">
+        <div class="hint">Ottieni da <strong>aistudio.google.com</strong> · Gratuito</div>
+      </div>
+    </div>
+
+    <div class="sblock">
+      <div class="stitle">Google Contacts (opzionale)</div>
+
+      <div class="fg">
+        <label class="flbl">Google OAuth Client ID</label>
+        <input type="text" class="finp" id="s-gcid"
+               placeholder="xxxx.apps.googleusercontent.com"
+               onchange="A.setSetting('googleClientId',this.value)">
+        <div class="hint">
+          1. Vai su <strong>console.cloud.google.com</strong><br>
+          2. Crea progetto → abilita <strong>People API</strong><br>
+          3. Credenziali → OAuth 2.0 Client ID (tipo Web)<br>
+          4. Aggiungi l'URL di questa pagina come Origine autorizzata
+        </div>
+      </div>
+
+      <div class="gstat">
+        <div class="sdot" id="g-dot"></div>
+        <span id="g-txt">Non connesso</span>
+      </div>
+      <button class="btn-google" id="g-btn" onclick="A.gAuth()">
+        <svg width="18" height="18" viewBox="0 0 24 24">
+          <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+          <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+          <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+          <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+        </svg>
+        Accedi con Google
+      </button>
+    </div>
+
+    <div class="sblock">
+      <div class="stitle">Dati</div>
+      <button class="btn btn-sec" onclick="A.exportData()" style="margin-bottom:9px">
+        📤  Esporta tutto (JSON)
+      </button>
+      <button class="btn btn-sec" onclick="A.importData()">
+        📥  Importa da JSON
+      </button>
+      <input type="file" id="imp-file" accept=".json" style="display:none"
+             onchange="A.handleImport(this)">
+      <div style="margin-top:14px">
+        <button class="btn" style="background:rgba(230,57,70,.15);color:var(--red);width:100%"
+                onclick="A.clearAll()">
+          🗑️  Cancella tutti i dati
+        </button>
+      </div>
+    </div>
+
+    <div style="padding:16px;color:var(--dim);font-size:11px;text-align:center">
+      MAYDAY v1.0 · Uso personale · Dati salvati localmente
+    </div>
+  </section>
+
+</div>
+
+<!-- BOTTOM NAV -->
+<nav id="bnav">
+  <button class="nitem on" onclick="A.go('home')">
+    <span class="nitem-ico">🏠</span><span>Home</span>
+  </button>
+  <button class="nitem" onclick="A.go('agenda')">
+    <span class="nitem-ico">📅</span><span>Agenda</span>
+  </button>
+  <button class="nitem" onclick="A.go('task')">
+    <span class="nitem-ico">✅</span><span>Task</span>
+  </button>
+  <button class="nitem" onclick="A.go('note')">
+    <span class="nitem-ico">📝</span><span>Note</span>
+  </button>
+  <button class="nitem" onclick="A.go('cfg')">
+    <span class="nitem-ico">⚙️</span><span>Config</span>
+  </button>
+</nav>
+
+<!-- MODAL -->
+<div id="overlay" onclick="A.closeModal()">
+  <div class="sheet" onclick="event.stopPropagation()">
+    <div class="sheet-handle"></div>
+    <div id="modal-body"></div>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div id="toast"></div>
+
+<script>
+/* ================================================================
+   MAYDAY — App logic
+   ================================================================ */
+const A = (() => {
+  // ── State ────────────────────────────────────────────────────
+  const st = {
+    view: 'home',
+    rec: false,
+    mr: null,       // MediaRecorder
+    chunks: [],
+    stream: null,
+    analyser: null,
+    audioCtx: null,
+    timerSec: 0,
+    timerIv: null,
+    waveIv: null,
+    contacts_pending: [],
+  };
+
+  // ── DB ───────────────────────────────────────────────────────
+  let db = { appointments: [], tasks: [], notes: [] };
+
+  // ── Settings ─────────────────────────────────────────────────
+  let cfg = {
+    groqKey: '',
+    geminiKey: '',
+    googleClientId: '',
+    googleToken: null,
+  };
+
+  // ── Persistence ──────────────────────────────────────────────
+  function load() {
+    try { const d = localStorage.getItem('md_db');  if (d) db  = JSON.parse(d); } catch{}
+    try { const s = localStorage.getItem('md_cfg'); if (s) cfg = { ...cfg, ...JSON.parse(s) }; } catch{}
+  }
+  function save()    { localStorage.setItem('md_db',  JSON.stringify(db));  }
+  function saveCfg() { localStorage.setItem('md_cfg', JSON.stringify(cfg)); }
+  function uid()     { return Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
+
+  // ── Navigation ───────────────────────────────────────────────
+  function go(view) {
+    document.querySelectorAll('.view').forEach(v => v.classList.remove('on'));
+    document.querySelectorAll('.nitem').forEach(b => b.classList.remove('on'));
+    document.getElementById('v-' + view).classList.add('on');
+
+    const titles = { home:'Registrazione', agenda:'Agenda', task:'Task', note:'Note Clienti', cfg:'Impostazioni' };
+    document.getElementById('hdr-title').textContent = titles[view] || '';
+    const idx = ['home','agenda','task','note','cfg'].indexOf(view);
+    document.querySelectorAll('.nitem')[idx]?.classList.add('on');
+
+    st.view = view;
+    if (view === 'home')   renderRecent();
+    if (view === 'agenda') renderAppts('all');
+    if (view === 'task')   renderTasks('all');
+    if (view === 'note')   renderNotes('');
+    if (view === 'cfg')    renderCfg();
+  }
+
+  // ── Recording ────────────────────────────────────────────────
+  async function toggleRec() {
+    st.rec ? stopRec() : await startRec();
+  }
+
+  async function startRec() {
+    if (!cfg.groqKey) {
+      toast('⚠️ Imposta la Groq API key nelle impostazioni');
+      go('cfg'); return;
+    }
+    try {
+      st.stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    } catch {
+      toast('❌ Accesso microfono negato'); return;
+    }
+
+    // Audio analyser for waveform
+    st.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const src = st.audioCtx.createMediaStreamSource(st.stream);
+    st.analyser = st.audioCtx.createAnalyser();
+    st.analyser.fftSize = 64;
+    src.connect(st.analyser);
+
+    st.chunks = [];
+    let opts = {};
+    for (const mt of ['audio/webm;codecs=opus','audio/webm','audio/ogg','']) {
+      if (!mt || MediaRecorder.isTypeSupported(mt)) { if (mt) opts.mimeType = mt; break; }
+    }
+    st.mr = new MediaRecorder(st.stream, opts);
+    st.mr.ondataavailable = e => { if (e.data.size > 0) st.chunks.push(e.data); };
+    st.mr.onstop = onRecStop;
+    st.mr.start(100);
+    st.rec = true;
+
+    setRecUI('rec', '⏹️', 'STOP', 'Registrazione in corso…');
+    st.timerSec = 0; updateTimer();
+    st.timerIv = setInterval(() => { st.timerSec++; updateTimer(); }, 1000);
+    initWave(); animWave();
+  }
+
+  function stopRec() {
+    st.mr?.stop();
+    st.stream?.getTracks().forEach(t => t.stop());
+    clearInterval(st.timerIv); clearInterval(st.waveIv);
+    st.rec = false;
+    setRecUI('proc', '⏳', 'ANALISI', 'Trascrizione in corso…');
+    document.getElementById('waveform').classList.remove('on');
+  }
+
+  async function onRecStop() {
+    const mime = st.mr?.mimeType || 'audio/webm';
+    const blob = new Blob(st.chunks, { type: mime });
+    try {
+      const tx = await transcribe(blob, mime);
+      const ex = await extract(tx);
+      await showConfirmModal(tx, ex);
+    } catch(e) {
+      toast('❌ ' + e.message);
+    }
+    setRecUI('', '🎙️', 'REGISTRA', 'Tocca per registrare');
+    document.getElementById('rec-timer').textContent = '';
+    st.audioCtx?.close().catch(()=>{});
+  }
+
+  function setRecUI(cls, ico, lbl, status) {
+    const btn = document.getElementById('btn-rec');
+    btn.className = 'btn-rec' + (cls ? ' ' + cls : '');
+    document.getElementById('rec-ico').textContent = ico;
+    document.getElementById('rec-lbl').textContent = lbl;
+    document.getElementById('rec-status').textContent = status;
+  }
+
+  function updateTimer() {
+    const m = String(Math.floor(st.timerSec/60)).padStart(2,'0');
+    const s = String(st.timerSec%60).padStart(2,'0');
+    document.getElementById('rec-timer').textContent = `${m}:${s}`;
+  }
+
+  function initWave() {
+    const wf = document.getElementById('waveform');
+    wf.innerHTML = '';
+    for (let i = 0; i < 20; i++) {
+      const b = document.createElement('div');
+      b.className = 'wbar';
+      b.style.height = '4px';
+      wf.appendChild(b);
+    }
+    wf.classList.add('on');
+  }
+
+  function animWave() {
+    const bars = document.querySelectorAll('.wbar');
+    st.waveIv = setInterval(() => {
+      if (st.analyser) {
+        const d = new Uint8Array(st.analyser.frequencyBinCount);
+        st.analyser.getByteFrequencyData(d);
+        bars.forEach((b, i) => {
+          const v = d[Math.floor(i * d.length / bars.length)];
+          b.style.height = Math.max(4, (v/255)*32) + 'px';
+        });
+      } else {
+        bars.forEach(b => { b.style.height = Math.max(4, Math.random()*32) + 'px'; });
+      }
+    }, 80);
+  }
+
+  // ── Groq Whisper ─────────────────────────────────────────────
+  async function transcribe(blob, mime) {
+    const ext = mime.includes('ogg') ? 'ogg' : mime.includes('mp4') ? 'm4a' : 'webm';
+    const fd = new FormData();
+    fd.append('file', blob, `rec.${ext}`);
+    fd.append('model', 'whisper-large-v3-turbo');
+    fd.append('language', 'it');
+    fd.append('response_format', 'json');
+
+    const r = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + cfg.groqKey },
+      body: fd,
+    });
+    if (!r.ok) {
+      const t = await r.text();
+      throw new Error('Groq ' + r.status + ': ' + t.slice(0,120));
+    }
+    const j = await r.json();
+    return j.text || '';
+  }
+
+  // ── Gemini extraction ─────────────────────────────────────────
+  async function extract(text) {
+    if (!cfg.geminiKey) return { tipo:'nota', cliente:'', descrizione: text, data:'', ora:'', scadenza:'', priorita:'media', luogo:'' };
+
+    const today = new Date().toISOString().split('T')[0];
+    const prompt = `Analizza questa dettatura vocale italiana ed estrai le informazioni.
+
+DETTATURA: "${text}"
+
+Restituisci SOLO JSON valido (nessun testo extra):
+{
+  "tipo": "appuntamento"|"task"|"nota",
+  "cliente": "nome cliente/persona o stringa vuota",
+  "data": "YYYY-MM-DD o stringa vuota",
+  "ora": "HH:MM 24h o stringa vuota",
+  "descrizione": "testo descrittivo conciso",
+  "scadenza": "YYYY-MM-DD per i task o stringa vuota",
+  "priorita": "alta"|"media"|"bassa",
+  "luogo": "luogo o stringa vuota"
+}
+
+Regole:
+- appuntamento = incontro con data/ora precisa
+- task = cosa da fare/ricordare
+- nota = informazione su cliente o memo generico
+- Date relative (domani, lunedì, prossima settimana) → calcola da oggi: ${today}
+- Nome cliente: solo nome proprio senza titoli`;
+
+    const r = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${cfg.geminiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { temperature: 0.1, maxOutputTokens: 400 },
+        }),
+      }
+    );
+    if (!r.ok) {
+      const t = await r.text();
+      throw new Error('Gemini ' + r.status + ': ' + t.slice(0,120));
+    }
+    const j = await r.json();
+    const raw = j.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+    const m = raw.match(/\{[\s\S]*\}/);
+    if (!m) throw new Error('Gemini: risposta non JSON');
+    return JSON.parse(m[0]);
+  }
+
+  // ── Google Contacts ───────────────────────────────────────────
+  async function searchContacts(name) {
+    if (!cfg.googleToken || !name) return [];
+    try {
+      const r = await fetch(
+        `https://people.googleapis.com/v1/people:searchContacts?query=${encodeURIComponent(name)}&readMask=names,phoneNumbers,emailAddresses&pageSize=5`,
+        { headers: { Authorization: 'Bearer ' + cfg.googleToken } }
+      );
+      if (r.status === 401) { cfg.googleToken = null; saveCfg(); updateGoogleUI(); return []; }
+      if (!r.ok) return [];
+      const j = await r.json();
+      return (j.results || []).map(x => ({
+        name:  x.person?.names?.[0]?.displayName || '',
+        phone: x.person?.phoneNumbers?.[0]?.value || '',
+        email: x.person?.emailAddresses?.[0]?.value || '',
+      })).filter(c => c.name);
+    } catch { return []; }
+  }
+
+  // ── Google OAuth (implicit) ───────────────────────────────────
+  function gAuth() {
+    if (!cfg.googleClientId) { toast('⚠️ Inserisci prima il Google Client ID'); return; }
+    const base = window.location.origin + window.location.pathname.replace(/\/[^/]*$/, '/');
+    const url = 'https://accounts.google.com/o/oauth2/v2/auth?' + new URLSearchParams({
+      client_id:    cfg.googleClientId,
+      redirect_uri: base,
+      response_type:'token',
+      scope:        'https://www.googleapis.com/auth/contacts.readonly',
+    });
+    window.location.href = url;
+  }
+
+  function checkOAuthCallback() {
+    const h = window.location.hash;
+    if (!h) return;
+    const p = new URLSearchParams(h.slice(1));
+    const tok = p.get('access_token');
+    if (tok) {
+      cfg.googleToken = tok;
+      saveCfg();
+      history.replaceState(null, '', window.location.pathname);
+      toast('✅ Google Contacts connesso!');
+    }
+  }
+
+  function updateGoogleUI() {
+    const dot = document.getElementById('g-dot');
+    const txt = document.getElementById('g-txt');
+    if (!dot) return;
+    if (cfg.googleToken) {
+      dot.classList.add('on');
+      txt.textContent = 'Connesso a Google Contacts';
+      document.getElementById('g-btn').textContent = '🔄 Riconnetti';
+    } else {
+      dot.classList.remove('on');
+      txt.textContent = 'Non connesso';
+    }
+  }
+
+  // ── Confirmation Modal ────────────────────────────────────────
+  async function showConfirmModal(transcription, ex) {
+    // Search contacts in background
+    let contacts = [];
+    if (ex.cliente) contacts = await searchContacts(ex.cliente);
+    st.contacts_pending = contacts;
+
+    const tipo = ex.tipo || 'nota';
+    const tcls = { appuntamento:'ex-apt', task:'ex-task', nota:'ex-note' }[tipo] || 'ex-note';
+    const tlab = { appuntamento:'📅 Appuntamento', task:'✅ Task', nota:'📝 Nota' }[tipo] || '📝 Nota';
+
+    let ctcHtml = '';
+    if (contacts.length) {
+      ctcHtml = `<div class="flbl" style="margin-bottom:7px">Contatto trovato nei Google Contacts</div>
+        ${contacts.map((c,i) => `
+          <div class="citem" onclick="A.pickContact(${i})">
+            <div class="cavatar">${esc(c.name[0]?.toUpperCase()||'?')}</div>
+            <div>
+              <div class="cname">${esc(c.name)}</div>
+              <div class="cphone">${esc(c.phone||c.email||'')}</div>
+            </div>
+          </div>`).join('')}
+        <div style="height:6px"></div>`;
+    }
+
+    let fields = '';
+    if (tipo === 'appuntamento') {
+      fields = `
+        <div class="fg"><label class="flbl">Cliente / Contatto</label>
+          <input type="text" class="finp" id="f-cli" value="${esc(ex.cliente||'')}"></div>
+        <div class="row">
+          <div class="fg"><label class="flbl">Data</label>
+            <input type="date" class="finp" id="f-data" value="${ex.data||''}"></div>
+          <div class="fg"><label class="flbl">Ora</label>
+            <input type="time" class="finp" id="f-ora" value="${ex.ora||''}"></div>
+        </div>
+        <div class="fg"><label class="flbl">Luogo</label>
+          <input type="text" class="finp" id="f-luogo" value="${esc(ex.luogo||'')}"></div>
+        <div class="fg"><label class="flbl">Descrizione</label>
+          <textarea class="finp" id="f-desc">${esc(ex.descrizione||'')}</textarea></div>`;
+    } else if (tipo === 'task') {
+      fields = `
+        <div class="fg"><label class="flbl">Cliente / Riguardo</label>
+          <input type="text" class="finp" id="f-cli" value="${esc(ex.cliente||'')}"></div>
+        <div class="fg"><label class="flbl">Cosa fare</label>
+          <textarea class="finp" id="f-desc">${esc(ex.descrizione||'')}</textarea></div>
+        <div class="row">
+          <div class="fg"><label class="flbl">Scadenza</label>
+            <input type="date" class="finp" id="f-scad" value="${ex.scadenza||''}"></div>
+          <div class="fg"><label class="flbl">Priorità</label>
+            <select class="finp" id="f-pri">
+              <option value="alta"  ${ex.priorita==='alta' ?'selected':''}>🔴 Alta</option>
+              <option value="media" ${!ex.priorita||ex.priorita==='media'?'selected':''}>🟡 Media</option>
+              <option value="bassa" ${ex.priorita==='bassa'?'selected':''}>🟢 Bassa</option>
+            </select></div>
+        </div>`;
+    } else {
+      fields = `
+        <div class="fg"><label class="flbl">Cliente</label>
+          <input type="text" class="finp" id="f-cli" value="${esc(ex.cliente||'')}"></div>
+        <div class="fg"><label class="flbl">Nota</label>
+          <textarea class="finp" id="f-desc" style="min-height:90px">${esc(ex.descrizione||'')}</textarea></div>`;
+    }
+
+    openModal(`
+      <div class="ex-type ${tcls}">${tlab}</div>
+      <div class="flbl">Testo trascritto</div>
+      <div class="tbox">${esc(transcription)}</div>
+      ${ctcHtml}
+      <div class="flbl" style="margin-bottom:10px">Verifica e correggi se necessario</div>
+      ${fields}
+      <div class="btn-row">
+        <button class="btn btn-sec" onclick="A.closeModal()">✕ Annulla</button>
+        <button class="btn btn-ok" onclick="A.saveEx('${tipo}')">✓ Salva</button>
+      </div>`);
+  }
+
+  function pickContact(i) {
+    const c = st.contacts_pending[i];
+    if (!c) return;
+    const el = document.getElementById('f-cli');
+    if (el) el.value = c.name;
+    toast('👤 ' + c.name + (c.phone ? '  ' + c.phone : ''));
+  }
+
+  function saveEx(tipo) {
+    const now = new Date().toISOString();
+    const id  = uid();
+    if (tipo === 'appuntamento') {
+      db.appointments.push({
+        id, tipo,
+        cliente:    q('f-cli'),
+        data:       q('f-data'),
+        ora:        q('f-ora'),
+        luogo:      q('f-luogo'),
+        descrizione:q('f-desc'),
+        creato: now,
+      });
+    } else if (tipo === 'task') {
+      db.tasks.push({
+        id, tipo,
+        cliente:    q('f-cli'),
+        descrizione:q('f-desc'),
+        scadenza:   q('f-scad'),
+        priorita:   q('f-pri') || 'media',
+        completato: false,
+        creato: now,
+      });
+    } else {
+      db.notes.push({
+        id, tipo: 'nota',
+        cliente:    q('f-cli'),
+        descrizione:q('f-desc'),
+        creato: now,
+      });
+    }
+    save();
+    closeModal();
+    renderRecent();
+    toast('✅ Salvato!');
+  }
+
+  function q(id) { return document.getElementById(id)?.value || ''; }
+
+  // ── Render ────────────────────────────────────────────────────
+  function renderRecent() {
+    const all = [
+      ...db.appointments,
+      ...db.tasks,
+      ...db.notes,
+    ].sort((a,b) => (b.creato||'').localeCompare(a.creato||'')).slice(0,6);
+
+    const el = document.getElementById('recent');
+    if (!all.length) {
+      el.innerHTML = `<div class="empty">
+        <div class="empty-ico">🎙️</div>
+        <div class="empty-txt">Tocca <strong>REGISTRA</strong> per catturare<br>il tuo primo memo vocale</div>
+      </div>`;
+      return;
+    }
+    el.innerHTML = all.map(renderCard).join('');
+  }
+
+  function renderAppts(filter) {
+    const today   = new Date().toISOString().split('T')[0];
+    const weekEnd = new Date(Date.now()+7*864e5).toISOString().split('T')[0];
+    let items = [...db.appointments].sort((a,b)=>((a.data+a.ora||'').localeCompare(b.data+b.ora||'')));
+
+    if (filter==='oggi') items = items.filter(a=>a.data===today);
+    else if (filter==='sett') items = items.filter(a=>a.data>=today&&a.data<=weekEnd);
+    else if (filter==='fut')  items = items.filter(a=>a.data>today);
+    else if (filter==='pass') items = items.filter(a=>a.data&&a.data<today);
+
+    const el = document.getElementById('appt-list');
+    el.innerHTML = items.length
+      ? items.map(renderCard).join('')
+      : `<div class="empty"><div class="empty-ico">📅</div><div class="empty-txt">Nessun appuntamento</div></div>`;
+  }
+
+  function renderTasks(filter) {
+    let items = [...db.tasks].sort((a,b)=>{
+      if (a.completato!==b.completato) return a.completato?1:-1;
+      const po={'alta':0,'media':1,'bassa':2};
+      return (po[a.priorita]??1)-(po[b.priorita]??1);
+    });
+    if (filter==='pend') items=items.filter(t=>!t.completato);
+    if (filter==='done') items=items.filter(t=>t.completato);
+
+    const el=document.getElementById('task-list');
+    el.innerHTML=items.length
+      ?items.map(renderCard).join('')
+      :`<div class="empty"><div class="empty-ico">✅</div><div class="empty-txt">Nessun task</div></div>`;
+  }
+
+  function renderNotes(search) {
+    let items=[...db.notes].sort((a,b)=>(b.creato||'').localeCompare(a.creato||''));
+    if (search){
+      const q=search.toLowerCase();
+      items=items.filter(n=>(n.cliente||'').toLowerCase().includes(q)||(n.descrizione||'').toLowerCase().includes(q));
+    }
+    const el=document.getElementById('note-list');
+    el.innerHTML=items.length
+      ?items.map(renderCard).join('')
+      :`<div class="empty"><div class="empty-ico">📝</div><div class="empty-txt">Nessuna nota${search?' trovata':''}</div></div>`;
+  }
+
+  function renderCard(item) {
+    const tipo=item.tipo||'nota';
+    const bc={appuntamento:'b-apt',task:'b-task',nota:'b-note'}[tipo]||'b-note';
+    const bl={appuntamento:'📅 Appuntamento',task:'✅ Task',nota:'📝 Nota'}[tipo]||'📝 Nota';
+
+    let meta='';
+    if (tipo==='appuntamento'){
+      const p=[];
+      if(item.data) p.push(fmtDate(item.data));
+      if(item.ora)  p.push(item.ora);
+      if(item.luogo)p.push('📍 '+item.luogo);
+      meta=p.join(' · ');
+    } else if (tipo==='task'){
+      const p=[];
+      if(item.scadenza) p.push('⏰ '+fmtDate(item.scadenza));
+      if(item.priorita) p.push(priLabel(item.priorita));
+      meta=p.join(' · ');
+    } else {
+      meta=fmtDate((item.creato||'').split('T')[0]);
+    }
+
+    const pdot = tipo==='task'?`<div class="pdot p-${item.priorita||'media'}"></div>`:'';
+    const taskBtn = tipo==='task'
+      ? `<button class="icobtn" onclick="A.toggleTask('${item.id}')" title="${item.completato?'Riapri':'Completa'}">${item.completato?'↩️':'☑️'}</button>`
+      : '';
+
+    return `<div class="card${item.completato?' done':''}" id="card-${item.id}">
+      <div class="card-hd">
+        <span class="badge ${bc}">${bl}</span>
+        ${pdot}
+      </div>
+      ${item.cliente?`<div class="card-cli">${esc(item.cliente)}</div>`:''}
+      ${meta?`<div class="card-meta">${meta}</div>`:''}
+      ${item.descrizione?`<div class="card-desc">${esc(item.descrizione)}</div>`:''}
+      <div class="card-acts">
+        ${taskBtn}
+        <button class="icobtn" onclick="A.editItem('${item.id}','${tipo}')" title="Modifica">✏️</button>
+        <button class="icobtn del" onclick="A.delItem('${item.id}','${tipo}')" title="Elimina">🗑️</button>
+      </div>
+    </div>`;
+  }
+
+  // ── CRUD ──────────────────────────────────────────────────────
+  function toggleTask(id) {
+    const t = db.tasks.find(x=>x.id===id);
+    if (!t) return;
+    t.completato = !t.completato;
+    save();
+    if (st.view==='task') renderTasks('all');
+    else renderRecent();
+    toast(t.completato?'✅ Completato':'↩️ Riaperto');
+  }
+
+  function delItem(id, tipo) {
+    const card = document.getElementById('card-'+id);
+    if (!card) return;
+    card.innerHTML = `<div class="del-confirm">
+      <span style="flex:1">Eliminare?</span>
+      <button style="background:var(--red);color:#fff" onclick="A.confirmDel('${id}','${tipo}')">Sì</button>
+      <button style="background:var(--bg3);color:var(--text)" onclick="A.rerender()">No</button>
+    </div>`;
+  }
+
+  function confirmDel(id, tipo) {
+    if (tipo==='appuntamento') db.appointments=db.appointments.filter(x=>x.id!==id);
+    else if (tipo==='task')    db.tasks=db.tasks.filter(x=>x.id!==id);
+    else                       db.notes=db.notes.filter(x=>x.id!==id);
+    save();
+    document.getElementById('card-'+id)?.remove();
+    toast('🗑️ Eliminato');
+  }
+
+  function rerender() {
+    if (st.view==='home')   renderRecent();
+    if (st.view==='agenda') renderAppts('all');
+    if (st.view==='task')   renderTasks('all');
+    if (st.view==='note')   renderNotes('');
+  }
+
+  function editItem(id, tipo) {
+    let item;
+    if (tipo==='appuntamento') item=db.appointments.find(x=>x.id===id);
+    else if (tipo==='task')    item=db.tasks.find(x=>x.id===id);
+    else                       item=db.notes.find(x=>x.id===id);
+    if (!item) return;
+
+    let fields='';
+    if (tipo==='appuntamento') {
+      fields=`
+        <div class="fg"><label class="flbl">Cliente</label>
+          <input type="text" class="finp" id="e-cli" value="${esc(item.cliente||'')}"></div>
+        <div class="row">
+          <div class="fg"><label class="flbl">Data</label>
+            <input type="date" class="finp" id="e-data" value="${item.data||''}"></div>
+          <div class="fg"><label class="flbl">Ora</label>
+            <input type="time" class="finp" id="e-ora" value="${item.ora||''}"></div>
+        </div>
+        <div class="fg"><label class="flbl">Luogo</label>
+          <input type="text" class="finp" id="e-luogo" value="${esc(item.luogo||'')}"></div>
+        <div class="fg"><label class="flbl">Descrizione</label>
+          <textarea class="finp" id="e-desc">${esc(item.descrizione||'')}</textarea></div>`;
+    } else if (tipo==='task') {
+      fields=`
+        <div class="fg"><label class="flbl">Cliente / Riguardo</label>
+          <input type="text" class="finp" id="e-cli" value="${esc(item.cliente||'')}"></div>
+        <div class="fg"><label class="flbl">Cosa fare</label>
+          <textarea class="finp" id="e-desc">${esc(item.descrizione||'')}</textarea></div>
+        <div class="row">
+          <div class="fg"><label class="flbl">Scadenza</label>
+            <input type="date" class="finp" id="e-scad" value="${item.scadenza||''}"></div>
+          <div class="fg"><label class="flbl">Priorità</label>
+            <select class="finp" id="e-pri">
+              <option value="alta"  ${item.priorita==='alta'?'selected':''}>🔴 Alta</option>
+              <option value="media" ${item.priorita==='media'?'selected':''}>🟡 Media</option>
+              <option value="bassa" ${item.priorita==='bassa'?'selected':''}>🟢 Bassa</option>
+            </select></div>
+        </div>`;
+    } else {
+      fields=`
+        <div class="fg"><label class="flbl">Cliente</label>
+          <input type="text" class="finp" id="e-cli" value="${esc(item.cliente||'')}"></div>
+        <div class="fg"><label class="flbl">Nota</label>
+          <textarea class="finp" id="e-desc" style="min-height:90px">${esc(item.descrizione||'')}</textarea></div>`;
+    }
+
+    openModal(`
+      <div class="sheet-title">✏️ Modifica ${tipo}</div>
+      ${fields}
+      <div class="btn-row">
+        <button class="btn btn-sec" onclick="A.closeModal()">Annulla</button>
+        <button class="btn btn-pr"  onclick="A.saveEdit('${id}','${tipo}')">Salva</button>
+      </div>`);
+  }
+
+  function saveEdit(id, tipo) {
+    if (tipo==='appuntamento') {
+      const it=db.appointments.find(x=>x.id===id);
+      if(it){ it.cliente=q('e-cli');it.data=q('e-data');it.ora=q('e-ora');it.luogo=q('e-luogo');it.descrizione=q('e-desc'); }
+    } else if (tipo==='task') {
+      const it=db.tasks.find(x=>x.id===id);
+      if(it){ it.cliente=q('e-cli');it.descrizione=q('e-desc');it.scadenza=q('e-scad');it.priorita=q('e-pri')||'media'; }
+    } else {
+      const it=db.notes.find(x=>x.id===id);
+      if(it){ it.cliente=q('e-cli');it.descrizione=q('e-desc'); }
+    }
+    save(); closeModal(); rerender(); toast('✅ Modificato!');
+  }
+
+  // ── Filter helpers ────────────────────────────────────────────
+  function fAppt(btn, f) {
+    document.querySelectorAll('#v-agenda .chip').forEach(b=>b.classList.remove('on'));
+    btn.classList.add('on');
+    renderAppts(f);
+  }
+  function fTask(btn, f) {
+    document.querySelectorAll('#v-task .chip').forEach(b=>b.classList.remove('on'));
+    btn.classList.add('on');
+    renderTasks(f);
+  }
+  function searchNotes(v) { renderNotes(v); }
+
+  // ── Modal ─────────────────────────────────────────────────────
+  function openModal(html) {
+    document.getElementById('modal-body').innerHTML = html;
+    document.getElementById('overlay').classList.add('on');
+  }
+  function closeModal() {
+    document.getElementById('overlay').classList.remove('on');
+  }
+
+  // ── Settings ─────────────────────────────────────────────────
+  function setSetting(k,v) { cfg[k]=v; saveCfg(); toast('💾 Salvato'); }
+
+  function renderCfg() {
+    document.getElementById('s-groq').value = cfg.groqKey||'';
+    document.getElementById('s-gem').value  = cfg.geminiKey||'';
+    document.getElementById('s-gcid').value = cfg.googleClientId||'';
+    updateGoogleUI();
+  }
+
+  // ── Export / Import ───────────────────────────────────────────
+  function exportData() {
+    const blob = new Blob([JSON.stringify({...db, exported: new Date().toISOString()},null,2)], {type:'application/json'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `mayday-${new Date().toISOString().split('T')[0]}.json`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+  function importData() { document.getElementById('imp-file').click(); }
+  function handleImport(inp) {
+    const file=inp.files[0]; if(!file) return;
+    const r=new FileReader();
+    r.onload=e=>{
+      try {
+        const d=JSON.parse(e.target.result);
+        if(d.appointments) db.appointments=[...db.appointments,...d.appointments];
+        if(d.tasks)        db.tasks=[...db.tasks,...d.tasks];
+        if(d.notes)        db.notes=[...db.notes,...d.notes];
+        save(); rerender(); toast('✅ Importato!');
+      } catch { toast('❌ File non valido'); }
+    };
+    r.readAsText(file); inp.value='';
+  }
+  function clearAll() {
+    openModal(`
+      <div class="sheet-title">⚠️ Cancella tutti i dati</div>
+      <p style="color:var(--dim);margin-bottom:18px;line-height:1.5;font-size:14px">
+        Verranno eliminati tutti gli appuntamenti, task e note. L'azione non è reversibile.
+      </p>
+      <div class="btn-row">
+        <button class="btn btn-sec" onclick="A.closeModal()">Annulla</button>
+        <button class="btn" style="background:var(--red);color:#fff;flex:1" onclick="A.confirmClearAll()">Cancella tutto</button>
+      </div>`);
+  }
+  function confirmClearAll() {
+    db={appointments:[],tasks:[],notes:[]}; save(); closeModal(); rerender(); toast('🗑️ Dati eliminati');
+  }
+
+  // ── Utilities ─────────────────────────────────────────────────
+  function esc(s) {
+    if(!s) return '';
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+  function fmtDate(d) {
+    if(!d) return '';
+    try { return new Date(d+'T00:00:00').toLocaleDateString('it-IT',{weekday:'short',day:'numeric',month:'short'}); }
+    catch { return d; }
+  }
+  function priLabel(p) {
+    return {alta:'🔴 Alta',media:'🟡 Media',bassa:'🟢 Bassa'}[p]||'';
+  }
+
+  let _toastTimer;
+  function toast(msg) {
+    const el=document.getElementById('toast');
+    el.textContent=msg;
+    el.classList.add('on');
+    clearTimeout(_toastTimer);
+    _toastTimer=setTimeout(()=>el.classList.remove('on'),2600);
+  }
+
+  // ── PWA install prompt ────────────────────────────────────────
+  window.addEventListener('beforeinstallprompt', e => e.preventDefault());
+
+  // ── Init ──────────────────────────────────────────────────────
+  function init() {
+    load();
+    checkOAuthCallback();
+    renderRecent();
+    if ('serviceWorker' in navigator)
+      navigator.serviceWorker.register('./sw.js').catch(()=>{});
+  }
+
+  return {
+    go, toggleRec,
+    fAppt, fTask, searchNotes,
+    pickContact, saveEx,
+    editItem, saveEdit,
+    delItem, confirmDel, rerender,
+    toggleTask,
+    openModal, closeModal,
+    setSetting,
+    exportData, importData, handleImport,
+    clearAll, confirmClearAll,
+    gAuth,
+    init,
+  };
+})();
+
+document.addEventListener('DOMContentLoaded', A.init);
+</script>
+</body>
+</html>
