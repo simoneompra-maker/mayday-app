@@ -899,7 +899,7 @@ const A = (() => {
 
 DETTATURA: "${text}"
 
-Restituisci SOLO JSON valido (nessun testo extra):
+Preferibilmente restituisci JSON valido in questo formato:
 {
   "tipo": "appuntamento"|"task"|"nota",
   "cliente": "nome cliente/persona o stringa vuota",
@@ -934,10 +934,13 @@ Regole:
       throw new Error('Gemini ' + r.status + ': ' + t.slice(0,120));
     }
     const j = await r.json();
-    const raw = j.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+    const raw = j.candidates?.[0]?.content?.parts?.[0]?.text || '';
     const m = raw.match(/\{[\s\S]*\}/);
-    if (!m) throw new Error('Gemini: risposta non JSON');
-    return JSON.parse(m[0]);
+    if (m) {
+      try { return JSON.parse(m[0]); } catch {}
+    }
+    // Fallback: risposta testo libero → usala come nota
+    return { tipo:'nota', cliente:'', descrizione: raw || text, data:'', ora:'', scadenza:'', priorita:'media', luogo:'' };
   }
 
   // ── Google Contacts ───────────────────────────────────────────
