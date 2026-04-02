@@ -935,12 +935,14 @@ Regole:
     }
     const j = await r.json();
     const raw = j.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    const m = raw.match(/\{[\s\S]*\}/);
+    // Rimuovi eventuali backtick markdown (```json ... ```)
+    const cleaned = raw.replace(/```(?:json)?\s*/gi, '').replace(/```/g, '').trim();
+    const m = cleaned.match(/\{[\s\S]*\}/);
     if (m) {
       try { return JSON.parse(m[0]); } catch {}
     }
     // Fallback: risposta testo libero → usala come nota
-    return { tipo:'nota', cliente:'', descrizione: raw || text, data:'', ora:'', scadenza:'', priorita:'media', luogo:'' };
+    return { tipo:'nota', cliente:'', descrizione: cleaned || text, data:'', ora:'', scadenza:'', priorita:'media', luogo:'' };
   }
 
   // ── Google Contacts ───────────────────────────────────────────
