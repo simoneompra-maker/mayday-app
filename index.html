@@ -919,7 +919,7 @@ Regole:
 - Nome cliente: solo nome proprio senza titoli`;
 
     const r = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${cfg.geminiKey}`,
+      `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${cfg.geminiKey}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
