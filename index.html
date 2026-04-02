@@ -899,17 +899,9 @@ const A = (() => {
 
 DETTATURA: "${text}"
 
-Preferibilmente restituisci JSON valido in questo formato:
-{
-  "tipo": "appuntamento"|"task"|"nota",
-  "cliente": "nome cliente/persona o stringa vuota",
-  "data": "YYYY-MM-DD o stringa vuota",
-  "ora": "HH:MM 24h o stringa vuota",
-  "descrizione": "testo descrittivo conciso",
-  "scadenza": "YYYY-MM-DD per i task o stringa vuota",
-  "priorita": "alta"|"media"|"bassa",
-  "luogo": "luogo o stringa vuota"
-}
+Rispondi SOLO con JSON puro, senza backtick, senza testo aggiuntivo, senza spiegazioni.
+Formato esatto:
+{"tipo":"appuntamento"|"task"|"nota","cliente":"nome o stringa vuota","data":"YYYY-MM-DD o stringa vuota","ora":"HH:MM o stringa vuota","descrizione":"testo descrittivo conciso","scadenza":"YYYY-MM-DD o stringa vuota","priorita":"alta"|"media"|"bassa","luogo":"luogo o stringa vuota"}
 
 Regole:
 - appuntamento = incontro con data/ora precisa
@@ -935,14 +927,32 @@ Regole:
     }
     const j = await r.json();
     const raw = j.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    // Rimuovi eventuali backtick markdown (```json ... ```)
-    const cleaned = raw.replace(/```(?:json)?\s*/gi, '').replace(/```/g, '').trim();
-    const m = cleaned.match(/\{[\s\S]*\}/);
-    if (m) {
-      try { return JSON.parse(m[0]); } catch {}
+    // Rimuovi backtick markdown in tutte le varianti
+    const cleaned = raw.replace(/```[\w]*\r?\n?/g, '').replace(/```/g, '').trim();
+
+    // Tenta parsing: prima il testo intero, poi solo il blocco {...}
+    let parsed = null;
+    try { parsed = JSON.parse(cleaned); } catch {}
+    if (!parsed) {
+      const m = cleaned.match(/\{[\s\S]*\}/);
+      if (m) { try { parsed = JSON.parse(m[0]); } catch {} }
     }
-    // Fallback: risposta testo libero → usala come nota
-    return { tipo:'nota', cliente:'', descrizione: cleaned || text, data:'', ora:'', scadenza:'', priorita:'media', luogo:'' };
+
+    if (parsed && typeof parsed === 'object') {
+      return {
+        tipo:       ['appuntamento','task','nota'].includes(parsed.tipo) ? parsed.tipo : 'nota',
+        cliente:    String(parsed.cliente    || ''),
+        descrizione:String(parsed.descrizione|| parsed.nota || ''),
+        data:       String(parsed.data       || ''),
+        ora:        String(parsed.ora        || ''),
+        scadenza:   String(parsed.scadenza   || ''),
+        priorita:   String(parsed.priorita   || 'media'),
+        luogo:      String(parsed.luogo      || ''),
+      };
+    }
+
+    // Fallback finale: testo non JSON → usalo come descrizione di una nota
+    return { tipo:'nota', cliente:'', descrizione: text, data:'', ora:'', scadenza:'', priorita:'media', luogo:'' };
   }
 
   // ── Google Contacts ───────────────────────────────────────────
