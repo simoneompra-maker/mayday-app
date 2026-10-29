@@ -667,7 +667,7 @@
     </div>
 
     <div style="padding:16px;color:var(--dim);font-size:11px;text-align:center">
-      MAYDAY v1.0 · Uso personale · Dati salvati localmente
+      MAYDAY v1.1 · Uso personale · Dati salvati localmente
     </div>
   </section>
 
@@ -721,6 +721,10 @@ const A = (() => {
     timerIv: null,
     waveIv: null,
     contacts_pending: [],
+    queue: [],      // elementi estratti da una dettatura, da confermare uno alla volta
+    qIdx: 0,
+    qTx: '',
+    qSaved: 0,
   };
 
   // ── DB ───────────────────────────────────────────────────────
@@ -816,9 +820,12 @@ const A = (() => {
     const blob = new Blob(st.chunks, { type: mime });
     try {
       const tx = await transcribe(blob, mime);
-      const ex = await extract(tx);
-      if (ex._errore) toast('⚠️ Gemini ha risposto in modo illeggibile. Ho messo la tua dettatura come nota: controlla i campi prima di salvare.', 6000);
-      await showConfirmModal(tx, ex);
+      const items = await extract(tx);
+      const err = items[0]?._errore;
+      if (err === 'troncata') toast('⚠️ Gemini non ha completato la risposta. Ho messo la tua dettatura come nota: puoi cambiarla o riprovare.', 6000);
+      else if (err) toast('⚠️ Gemini ha risposto in modo illeggibile. Ho messo la tua dettatura come nota: controlla i campi prima di salvare.', 6000);
+      st.queue = items; st.qIdx = 0; st.qTx = tx; st.qSaved = 0;
+      await showConfirmModal(tx, items[0]);
     } catch(e) {
       toast('❌ ' + e.message);
     }
@@ -892,67 +899,105 @@ const A = (() => {
   }
 
   // ── Gemini extraction ─────────────────────────────────────────
-  async function extract(text) {
-    if (!cfg.geminiKey) return { tipo:'nota', cliente:'', descrizione: text, data:'', ora:'', scadenza:'', priorita:'media', luogo:'' };
+  // Restituisce sempre un elenco di elementi (uno per ogni azione dettata)
+  function fallbackItem(text, errore) {
+    const it = { tipo:'nota', cliente:'', descrizione: text, data:'', ora:'', scadenza:'', priorita:'media', luogo:'' };
+    if (errore) it._errore = errore;
+    return [it];
+  }
 
-    const today = new Date().toISOString().split('T')[0];
-    const prompt = `Analizza questa dettatura vocale italiana ed estrai le informazioni.
+  const GEMINI_SCHEMA = {
+    type: 'OBJECT',
+    properties: {
+      elementi: {
+        type: 'ARRAY',
+        items: {
+          type: 'OBJECT',
+          properties: {
+            tipo:        { type: 'STRING', enum: ['appuntamento','task','nota'] },
+            cliente:     { type: 'STRING' },
+            data:        { type: 'STRING' },
+            ora:         { type: 'STRING' },
+            descrizione: { type: 'STRING' },
+            scadenza:    { type: 'STRING' },
+            priorita:    { type: 'STRING', enum: ['alta','media','bassa'] },
+            luogo:       { type: 'STRING' },
+          },
+          required: ['tipo','descrizione'],
+        },
+      },
+    },
+    required: ['elementi'],
+  };
+
+  async function extract(text) {
+    if (!cfg.geminiKey) return fallbackItem(text);
+
+    const d = new Date();
+    const today = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    const weekday = d.toLocaleDateString('it-IT', { weekday: 'long' });
+    const prompt = `Analizza questa dettatura vocale italiana ed estrai TUTTE le azioni che contiene.
 
 DETTATURA: "${text}"
 
 Rispondi SOLO con JSON puro, senza backtick, senza testo aggiuntivo, senza spiegazioni.
 Formato esatto:
-{"tipo":"appuntamento"|"task"|"nota","cliente":"nome o stringa vuota","data":"YYYY-MM-DD o stringa vuota","ora":"HH:MM o stringa vuota","descrizione":"testo descrittivo conciso","scadenza":"YYYY-MM-DD o stringa vuota","priorita":"alta"|"media"|"bassa","luogo":"luogo o stringa vuota"}
+{"elementi":[{"tipo":"appuntamento"|"task"|"nota","cliente":"nome o stringa vuota","data":"YYYY-MM-DD o stringa vuota","ora":"HH:MM o stringa vuota","descrizione":"testo descrittivo conciso","scadenza":"YYYY-MM-DD o stringa vuota","priorita":"alta"|"media"|"bassa","luogo":"luogo o stringa vuota"}]}
 
 Regole:
-- appuntamento = incontro con data/ora precisa
-- task = cosa da fare/ricordare
-- nota = informazione su cliente o memo generico
-- Date relative (domani, lunedì, prossima settimana) → calcola da oggi: ${today}
+- Crea UN elemento per OGNI azione distinta. Una dettatura può contenere sia un appuntamento sia una o più task: separale sempre.
+- appuntamento = incontro/visita/chiamata fissata con data o ora precisa (usa "data", "ora", "luogo")
+- task = qualcosa che devo fare: frasi con "devo", "ricordarmi di", "entro", "mandare", "chiamare", "preparare", "inviare" ecc. Metti la data limite in "scadenza" (non in "data")
+- nota = informazione su un cliente o memo generico, senza un'azione da fare
+- "descrizione" è testo semplice in italiano, mai JSON
+- Pronomi come "gli", "le", "mandargli" si riferiscono al cliente nominato prima: ripeti il suo nome in "cliente"
+- Date relative (domani, lunedì, venerdì, prossima settimana) → calcola da oggi: ${today} (${weekday})
+- Priorità: "alta" se urgente o scadenza entro 2 giorni, altrimenti "media"
 - Nome cliente: solo nome proprio senza titoli`;
 
-    const r = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${cfg.geminiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.1, maxOutputTokens: 2048, responseMimeType: 'application/json' },
-        }),
-      }
-    );
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${cfg.geminiKey}`;
+    const call = gen => fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: gen }),
+    });
+    const base = { temperature: 0.1, maxOutputTokens: 8192, responseMimeType: 'application/json' };
+    let r = await call({ ...base, responseSchema: GEMINI_SCHEMA, thinkingConfig: { thinkingLevel: 'low' } });
+    // Se il modello rifiuta schema/thinkingConfig, riprova con la configurazione minima
+    if (r.status === 400) r = await call(base);
     if (!r.ok) {
       const t = await r.text();
       throw new Error('Gemini ' + r.status + ': ' + t.slice(0,120));
     }
     const j = await r.json();
+    const cand = j.candidates?.[0];
+    // Risposta tagliata (token esauriti): il JSON sarebbe incompleto
+    if (cand?.finishReason === 'MAX_TOKENS') return fallbackItem(text, 'troncata');
     // Unisci tutte le parti di testo, escludendo quelle di "ragionamento"
-    const raw = (j.candidates?.[0]?.content?.parts || [])
+    const raw = (cand?.content?.parts || [])
       .filter(p => p.text && !p.thought).map(p => p.text).join('');
 
-    const parsed = parseGeminiJson(raw);
-    if (parsed) {
-      const ex = normalizeExtraction(parsed);
+    const items = parseGeminiJson(raw).map(normalizeExtraction).map(ex => {
       if (!ex.descrizione || looksLikeJson(ex.descrizione)) ex.descrizione = text;
       return ex;
-    }
-
+    });
     // Fallback finale: risposta illeggibile → mai il testo di Gemini, solo la dettatura
-    return { tipo:'nota', cliente:'', descrizione: text, data:'', ora:'', scadenza:'', priorita:'media', luogo:'', _errore: true };
+    return items.length ? items : fallbackItem(text, 'illeggibile');
   }
 
-  // Estrae un oggetto JSON dalla risposta (anche se tra ```json ... ``` o con testo intorno)
+  // Estrae gli elementi dalla risposta (anche se tra ```json ... ``` o con testo intorno).
+  // Accetta {"elementi":[...]}, un elenco [...] o un singolo oggetto (vecchio formato).
   function parseGeminiJson(raw) {
     const cleaned = String(raw || '').replace(/```[\w]*\r?\n?/g, '').replace(/```/g, '').trim();
     let parsed = null;
     try { parsed = JSON.parse(cleaned); } catch {}
     if (!parsed) {
-      const m = cleaned.match(/\{[\s\S]*\}/);
+      const m = cleaned.match(/[\[{][\s\S]*[\]}]/);
       if (m) { try { parsed = JSON.parse(m[0]); } catch {} }
     }
-    if (Array.isArray(parsed)) parsed = parsed[0];
-    return parsed && typeof parsed === 'object' ? parsed : null;
+    if (parsed && !Array.isArray(parsed) && Array.isArray(parsed.elementi)) parsed = parsed.elementi;
+    const list = Array.isArray(parsed) ? parsed : (parsed ? [parsed] : []);
+    return list.filter(p => p && typeof p === 'object' && !Array.isArray(p));
   }
 
   function normalizeExtraction(p) {
@@ -968,9 +1013,13 @@ Regole:
     };
   }
 
+  // Vero se il testo è (o contiene) JSON / blocchi di codice invece di testo normale
   function looksLikeJson(s) {
     const t = String(s || '').trim();
-    return t.startsWith('```') || (t.startsWith('{') && t.includes('"tipo"'));
+    if (t.includes('```')) return true;
+    if (!/^[\[{]/.test(t)) return false;
+    try { JSON.parse(t); return true; } catch {}
+    return /"\s*:/.test(t);   // JSON troncato: {"tipo": ...
   }
 
   // Ripara le voci salvate dalle versioni precedenti con il JSON grezzo nella descrizione
@@ -979,7 +1028,7 @@ Regole:
     for (const list of [db.appointments, db.tasks, db.notes]) {
       for (const it of list || []) {
         if (!looksLikeJson(it.descrizione)) continue;
-        const p = parseGeminiJson(it.descrizione);
+        const p = parseGeminiJson(it.descrizione)[0];
         const ex = p ? normalizeExtraction(p) : null;
         it.descrizione = ex && ex.descrizione && !looksLikeJson(ex.descrizione)
           ? ex.descrizione : '(nota non leggibile, da riscrivere)';
@@ -1116,7 +1165,15 @@ Regole:
           <textarea class="finp" id="f-desc" style="min-height:90px">${esc(ex.descrizione||'')}</textarea></div>`;
     }
 
+    const tot = st.queue.length;
+    const counter = tot > 1
+      ? `<div class="flbl" style="margin-bottom:6px">Elemento ${st.qIdx + 1} di ${tot}</div>` : '';
+    const cancelBtn = tot > 1
+      ? `<button class="btn btn-sec" onclick="A.skipEx()">✕ Salta</button>`
+      : `<button class="btn btn-sec" onclick="A.closeModal()">✕ Annulla</button>`;
+
     openModal(`
+      ${counter}
       <div class="ex-type ${tcls}">${tlab}</div>
       <div class="flbl">Testo trascritto</div>
       <div class="tbox">${esc(transcription)}</div>
@@ -1124,7 +1181,7 @@ Regole:
       <div class="flbl" style="margin-bottom:10px">Verifica e correggi se necessario</div>
       ${fields}
       <div class="btn-row">
-        <button class="btn btn-sec" onclick="A.closeModal()">✕ Annulla</button>
+        ${cancelBtn}
         <button class="btn btn-ok" onclick="A.saveEx('${tipo}')">✓ Salva</button>
       </div>`);
   }
@@ -1169,9 +1226,25 @@ Regole:
       });
     }
     save();
-    closeModal();
     renderRecent();
-    toast('✅ Salvato!');
+    st.qSaved++;
+    nextEx();
+  }
+
+  // Passa al prossimo elemento della dettatura, oppure chiude
+  function skipEx() { nextEx(); }
+
+  function nextEx() {
+    st.qIdx++;
+    if (st.qIdx < st.queue.length) {
+      showConfirmModal(st.qTx, st.queue[st.qIdx]);
+      return;
+    }
+    closeModal();
+    const n = st.qSaved;
+    st.queue = []; st.qIdx = 0; st.qSaved = 0;
+    if (n > 1) toast(`✅ Salvati ${n} elementi`);
+    else if (n === 1) toast('✅ Salvato!');
   }
 
   function q(id) { return document.getElementById(id)?.value || ''; }
@@ -1496,7 +1569,7 @@ Regole:
   return {
     go, toggleRec,
     fAppt, fTask, searchNotes,
-    pickContact, saveEx,
+    pickContact, saveEx, skipEx,
     editItem, saveEdit,
     delItem, confirmDel, rerender,
     toggleTask,
