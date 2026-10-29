@@ -1,4 +1,4 @@
-const CACHE = 'mayday-v1';
+const CACHE = 'mayday-v2';
 const ASSETS = ['./'];
 
 self.addEventListener('install', e => {
@@ -24,6 +24,20 @@ self.addEventListener('fetch', e => {
     url.hostname.includes('google.com') ||
     url.hostname.includes('accounts.google.com')
   ) {
+    return;
+  }
+
+  // Page: network first, so updates arrive immediately; cache only when offline
+  if (e.request.mode === 'navigate') {
+    e.respondWith(
+      fetch(e.request).then(resp => {
+        if (resp.ok) {
+          const clone = resp.clone();
+          caches.open(CACHE).then(c => c.put(e.request, clone));
+        }
+        return resp;
+      }).catch(() => caches.match(e.request).then(c => c || caches.match('./')))
+    );
     return;
   }
 

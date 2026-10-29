@@ -817,6 +817,7 @@ const A = (() => {
     try {
       const tx = await transcribe(blob, mime);
       const ex = await extract(tx);
+      if (ex._errore) toast('⚠️ Gemini ha risposto in modo illeggibile. Ho messo la tua dettatura come nota: controlla i campi prima di salvare.', 6000);
       await showConfirmModal(tx, ex);
     } catch(e) {
       toast('❌ ' + e.message);
@@ -917,7 +918,7 @@ Regole:
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.1, maxOutputTokens: 400 },
+          generationConfig: { temperature: 0.1, maxOutputTokens: 2048, responseMimeType: 'application/json' },
         }),
       }
     );
@@ -926,33 +927,70 @@ Regole:
       throw new Error('Gemini ' + r.status + ': ' + t.slice(0,120));
     }
     const j = await r.json();
-    const raw = j.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    // Rimuovi backtick markdown in tutte le varianti
-    const cleaned = raw.replace(/```[\w]*\r?\n?/g, '').replace(/```/g, '').trim();
+    // Unisci tutte le parti di testo, escludendo quelle di "ragionamento"
+    const raw = (j.candidates?.[0]?.content?.parts || [])
+      .filter(p => p.text && !p.thought).map(p => p.text).join('');
 
-    // Tenta parsing: prima il testo intero, poi solo il blocco {...}
+    const parsed = parseGeminiJson(raw);
+    if (parsed) {
+      const ex = normalizeExtraction(parsed);
+      if (!ex.descrizione || looksLikeJson(ex.descrizione)) ex.descrizione = text;
+      return ex;
+    }
+
+    // Fallback finale: risposta illeggibile → mai il testo di Gemini, solo la dettatura
+    return { tipo:'nota', cliente:'', descrizione: text, data:'', ora:'', scadenza:'', priorita:'media', luogo:'', _errore: true };
+  }
+
+  // Estrae un oggetto JSON dalla risposta (anche se tra ```json ... ``` o con testo intorno)
+  function parseGeminiJson(raw) {
+    const cleaned = String(raw || '').replace(/```[\w]*\r?\n?/g, '').replace(/```/g, '').trim();
     let parsed = null;
     try { parsed = JSON.parse(cleaned); } catch {}
     if (!parsed) {
       const m = cleaned.match(/\{[\s\S]*\}/);
       if (m) { try { parsed = JSON.parse(m[0]); } catch {} }
     }
+    if (Array.isArray(parsed)) parsed = parsed[0];
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  }
 
-    if (parsed && typeof parsed === 'object') {
-      return {
-        tipo:       ['appuntamento','task','nota'].includes(parsed.tipo) ? parsed.tipo : 'nota',
-        cliente:    String(parsed.cliente    || ''),
-        descrizione:String(parsed.descrizione|| parsed.nota || ''),
-        data:       String(parsed.data       || ''),
-        ora:        String(parsed.ora        || ''),
-        scadenza:   String(parsed.scadenza   || ''),
-        priorita:   String(parsed.priorita   || 'media'),
-        luogo:      String(parsed.luogo      || ''),
-      };
+  function normalizeExtraction(p) {
+    return {
+      tipo:       ['appuntamento','task','nota'].includes(p.tipo) ? p.tipo : 'nota',
+      cliente:    String(p.cliente    || ''),
+      descrizione:String(p.descrizione|| p.nota || ''),
+      data:       String(p.data       || ''),
+      ora:        String(p.ora        || ''),
+      scadenza:   String(p.scadenza   || ''),
+      priorita:   ['alta','media','bassa'].includes(p.priorita) ? p.priorita : 'media',
+      luogo:      String(p.luogo      || ''),
+    };
+  }
+
+  function looksLikeJson(s) {
+    const t = String(s || '').trim();
+    return t.startsWith('```') || (t.startsWith('{') && t.includes('"tipo"'));
+  }
+
+  // Ripara le voci salvate dalle versioni precedenti con il JSON grezzo nella descrizione
+  function repairOldItems() {
+    let changed = false;
+    for (const list of [db.appointments, db.tasks, db.notes]) {
+      for (const it of list || []) {
+        if (!looksLikeJson(it.descrizione)) continue;
+        const p = parseGeminiJson(it.descrizione);
+        const ex = p ? normalizeExtraction(p) : null;
+        it.descrizione = ex && ex.descrizione && !looksLikeJson(ex.descrizione)
+          ? ex.descrizione : '(nota non leggibile, da riscrivere)';
+        if (ex) {
+          if (!it.cliente && ex.cliente) it.cliente = ex.cliente;
+          if (!it.luogo && ex.luogo)     it.luogo   = ex.luogo;
+        }
+        changed = true;
+      }
     }
-
-    // Fallback finale: testo non JSON → usalo come descrizione di una nota
-    return { tipo:'nota', cliente:'', descrizione: text, data:'', ora:'', scadenza:'', priorita:'media', luogo:'' };
+    if (changed) save();
   }
 
   // ── Google Contacts ───────────────────────────────────────────
@@ -1434,12 +1472,12 @@ Regole:
   }
 
   let _toastTimer;
-  function toast(msg) {
+  function toast(msg, ms=2600) {
     const el=document.getElementById('toast');
     el.textContent=msg;
     el.classList.add('on');
     clearTimeout(_toastTimer);
-    _toastTimer=setTimeout(()=>el.classList.remove('on'),2600);
+    _toastTimer=setTimeout(()=>el.classList.remove('on'),ms);
   }
 
   // ── PWA install prompt ────────────────────────────────────────
@@ -1448,6 +1486,7 @@ Regole:
   // ── Init ──────────────────────────────────────────────────────
   function init() {
     load();
+    repairOldItems();
     checkOAuthCallback();
     renderRecent();
     if ('serviceWorker' in navigator)
