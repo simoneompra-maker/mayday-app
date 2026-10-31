@@ -205,6 +205,21 @@
     .card-acts { display: flex; gap: 4px; justify-content: flex-end; margin-top: 8px; }
     .card.done  { opacity: .5; }
     .card.done .card-cli { text-decoration: line-through; }
+    .cal-btn {
+      margin-right: auto;
+      background: rgba(69,123,157,.12);
+      color: var(--blue);
+      border: none;
+      border-radius: 6px;
+      padding: 5px 10px;
+      font-size: 14px;
+      font-weight: 700;
+      font-family: inherit;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .cal-btn:active { background: rgba(69,123,157,.25); }
+    .cal-ok { font-size: 13px; font-weight: 700; color: var(--ok); }
 
     .icobtn {
       background: none;
@@ -667,7 +682,7 @@
     </div>
 
     <div style="padding:16px;color:var(--dim);font-size:11px;text-align:center">
-      MAYDAY v1.1 · Uso personale · Dati salvati localmente
+      MAYDAY v1.2 · Uso personale · Dati salvati localmente
     </div>
   </section>
 
@@ -1336,16 +1351,23 @@ Regole:
     const taskBtn = tipo==='task'
       ? `<button class="icobtn" onclick="A.toggleTask('${item.id}')" title="${item.completato?'Riapri':'Completa'}">${item.completato?'↩️':'☑️'}</button>`
       : '';
+    const isApt = tipo==='appuntamento';
+    const calBtn = isApt
+      ? `<button class="cal-btn" onclick="A.addToCal('${item.id}')">📅 Aggiungi a Calendar</button>`
+      : '';
+    const calMark = isApt && calOk(item) ? `<span class="cal-ok">✓ In Calendar</span>` : '';
 
     return `<div class="card${item.completato?' done':''}" id="card-${item.id}">
       <div class="card-hd">
         <span class="badge ${bc}">${bl}</span>
         ${pdot}
+        ${calMark}
       </div>
       ${item.cliente?`<div class="card-cli">${esc(item.cliente)}</div>`:''}
       ${meta?`<div class="card-meta">${meta}</div>`:''}
       ${item.descrizione?`<div class="card-desc">${esc(item.descrizione)}</div>`:''}
       <div class="card-acts">
+        ${calBtn}
         ${taskBtn}
         <button class="icobtn" onclick="A.editItem('${item.id}','${tipo}')" title="Modifica">✏️</button>
         <button class="icobtn del" onclick="A.delItem('${item.id}','${tipo}')" title="Elimina">🗑️</button>
@@ -1411,7 +1433,9 @@ Regole:
         <div class="fg"><label class="flbl">Luogo</label>
           <input type="text" class="finp" id="e-luogo" value="${esc(item.luogo||'')}"></div>
         <div class="fg"><label class="flbl">Descrizione</label>
-          <textarea class="finp" id="e-desc">${esc(item.descrizione||'')}</textarea></div>`;
+          <textarea class="finp" id="e-desc">${esc(item.descrizione||'')}</textarea></div>
+        <button class="btn btn-sec" onclick="A.addToCal('${id}',true)">📅 Aggiungi a Calendar</button>
+        <div class="hint cal-ok" id="e-calst">${calStatus(item)}</div>`;
     } else if (tipo==='task') {
       fields=`
         <div class="fg"><label class="flbl">Cliente / Riguardo</label>
@@ -1457,6 +1481,76 @@ Regole:
       if(it){ it.cliente=q('e-cli');it.descrizione=q('e-desc'); }
     }
     save(); closeModal(); rerender(); toast('✅ Modificato!');
+  }
+
+  // ── Google Calendar (link precompilato, nessun accesso Google) ─
+  const CAL_ACCOUNT = 'simone.ompra@gmail.com';
+
+  // La spunta vale solo se data e ora non sono cambiate dopo l'invio a Calendar
+  function calOk(it) {
+    const c = it.calendario;
+    return !!c && c.data === (it.data||'') && c.ora === (it.ora||'');
+  }
+  function calStatus(it) {
+    if (!calOk(it)) return '';
+    const d = new Date(it.calendario.il);
+    return '✓ Già aggiunto a Calendar il ' + d.toLocaleDateString('it-IT',{day:'numeric',month:'short'})
+      + ' alle ' + d.toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'});
+  }
+
+  // Codifica anche ' ( ) ! * che encodeURIComponent lascerebbe così come sono
+  function urlEnc(s) {
+    return encodeURIComponent(s).replace(/[!'()*]/g, c => '%' + c.charCodeAt(0).toString(16).toUpperCase());
+  }
+  // Date usate solo come calcolatrice (in UTC), così il fuso del telefono non conta
+  function calStamp(dt, withTime) {
+    const p = n => String(n).padStart(2,'0');
+    const s = `${dt.getUTCFullYear()}${p(dt.getUTCMonth()+1)}${p(dt.getUTCDate())}`;
+    return withTime ? `${s}T${p(dt.getUTCHours())}${p(dt.getUTCMinutes())}00` : s;
+  }
+
+  function calUrl(a) {
+    const [y,m,d] = a.data.split('-').map(Number);
+    let dates;
+    if (/^\d{1,2}:\d{2}/.test(a.ora||'')) {
+      const [h,mi] = a.ora.split(':').map(Number);
+      const s = new Date(Date.UTC(y, m-1, d, h, mi));
+      dates = calStamp(s,true) + '/' + calStamp(new Date(s.getTime() + 36e5), true);   // durata 1 ora
+    } else {
+      const s = new Date(Date.UTC(y, m-1, d));
+      dates = calStamp(s) + '/' + calStamp(new Date(s.getTime() + 864e5));             // tutto il giorno
+    }
+    const title = a.cliente || (a.descrizione||'').slice(0,60) || 'Appuntamento';
+    const params = [
+      ['action', 'TEMPLATE'],
+      ['text', title],
+      ['dates', dates],
+      ['ctz', 'Europe/Rome'],
+      ['location', a.luogo],
+      ['details', a.descrizione],
+      ['authuser', CAL_ACCOUNT],
+    ].filter(([,v]) => v).map(([k,v]) => k + '=' + (k==='dates' ? v : urlEnc(v)));
+    return 'https://calendar.google.com/calendar/render?' + params.join('&');
+  }
+
+  function addToCal(id, fromEdit) {
+    const it = db.appointments.find(x=>x.id===id);
+    if (!it) return;
+    // Dalla scheda di modifica usa i valori scritti nei campi, anche se non ancora salvati
+    const a = fromEdit
+      ? { ...it, cliente:q('e-cli'), data:q('e-data'), ora:q('e-ora'), luogo:q('e-luogo'), descrizione:q('e-desc') }
+      : it;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(a.data||'')) { toast('⚠️ Aggiungi prima la data all\'appuntamento'); return; }
+
+    const url = calUrl(a);
+    if (!window.open(url, '_blank')) window.location.href = url;
+
+    it.calendario = { il: new Date().toISOString(), data: a.data||'', ora: a.ora||'' };
+    save();
+    // Aggiorna solo la scheda (in Home e in Agenda) senza perdere il filtro scelto
+    document.querySelectorAll(`[id="card-${id}"]`).forEach(c => { c.outerHTML = renderCard(it); });
+    const stEl = document.getElementById('e-calst');
+    if (stEl) stEl.textContent = calStatus({ ...it, data: a.data, ora: a.ora });
   }
 
   // ── Filter helpers ────────────────────────────────────────────
@@ -1572,7 +1666,7 @@ Regole:
     pickContact, saveEx, skipEx,
     editItem, saveEdit,
     delItem, confirmDel, rerender,
-    toggleTask,
+    toggleTask, addToCal,
     openModal, closeModal,
     setSetting,
     exportData, importData, handleImport,
