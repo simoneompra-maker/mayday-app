@@ -1,4 +1,4 @@
-const CACHE = 'mayday-v4';
+const CACHE = 'mayday-v5';
 const ASSETS = ['./'];
 
 self.addEventListener('install', e => {
@@ -17,8 +17,11 @@ self.addEventListener('activate', e => {
 
 self.addEventListener('fetch', e => {
   // Never intercept API calls — only cache the app shell
+  // (la libreria supabase-js dal CDN invece resta in cache, così l'app si apre anche offline)
   const url = new URL(e.request.url);
   if (
+    e.request.method !== 'GET' ||
+    url.hostname.endsWith('supabase.co') ||
     url.hostname.includes('groq.com') ||
     url.hostname.includes('googleapis.com') ||
     url.hostname.includes('google.com') ||

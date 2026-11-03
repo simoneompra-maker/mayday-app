@@ -10,6 +10,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="MAYDAY">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/dist/umd/supabase.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -574,6 +575,7 @@
       <div class="waveform" id="waveform"></div>
     </div>
 
+    <div id="pending"></div>
     <div class="sec-lbl">Ultimi elementi</div>
     <div id="recent"></div>
   </section>
@@ -613,6 +615,29 @@
   <!-- IMPOSTAZIONI -->
   <section class="view" id="v-cfg">
     <div class="sblock">
+      <div class="stitle">Account</div>
+      <div class="gstat">
+        <div class="sdot" id="a-dot"></div>
+        <span id="a-txt">Non collegato</span>
+      </div>
+      <div id="a-login">
+        <div class="fg">
+          <label class="flbl">Email</label>
+          <input type="email" class="finp" id="a-email" value="simone.ompra@gmail.com">
+          <div class="hint">Riceverai un link: aprilo con <strong>Samsung Internet</strong> (tieni premuto il link → copia → incolla in Samsung Internet).</div>
+        </div>
+        <button class="btn btn-pr" id="a-send" onclick="A.sendLink()">📧  Invia magic link</button>
+      </div>
+      <div id="a-logged" style="display:none">
+        <div class="btn-row" style="margin-top:0">
+          <button class="btn btn-sec" onclick="A.syncNow()">🔄  Sincronizza</button>
+          <button class="btn btn-sec" onclick="A.logout()">Esci</button>
+        </div>
+      </div>
+      <div class="hint" id="a-sync"></div>
+    </div>
+
+    <div class="sblock">
       <div class="stitle">API Keys</div>
 
       <div class="fg">
@@ -628,7 +653,8 @@
         <input type="password" class="finp" id="s-gem"
                placeholder="AIza…"
                onchange="A.setSetting('geminiKey',this.value)">
-        <div class="hint">Ottieni da <strong>aistudio.google.com</strong> · Gratuito</div>
+        <div class="hint">Ottieni da <strong>aistudio.google.com</strong> · Gratuito<br>
+          Se la lasci vuota e sei collegato, MAYDAY usa la funzione <strong>gemini-proxy</strong> di Supabase.</div>
       </div>
     </div>
 
@@ -682,7 +708,7 @@
     </div>
 
     <div style="padding:16px;color:var(--dim);font-size:11px;text-align:center">
-      MAYDAY v1.2 · Uso personale · Dati salvati localmente
+      MAYDAY v2.0 · Uso personale · Dati su Supabase, copia offline sul telefono
     </div>
   </section>
 
@@ -708,7 +734,7 @@
 </nav>
 
 <!-- MODAL -->
-<div id="overlay" onclick="A.closeModal()">
+<div id="overlay" onclick="A.dismissModal()">
   <div class="sheet" onclick="event.stopPropagation()">
     <div class="sheet-handle"></div>
     <div id="modal-body"></div>
@@ -740,10 +766,31 @@ const A = (() => {
     qIdx: 0,
     qTx: '',
     qSaved: 0,
+    qRec: null,     // id della registrazione (IndexedDB) che si sta confermando
+    busy: false,
+    fA: 'all',      // filtro attivo in Agenda
+    fT: 'all',      // filtro attivo in Task
   };
 
   // ── DB ───────────────────────────────────────────────────────
+  // Copia locale dei dati (cache offline); la fonte principale è Supabase
   let db = { appointments: [], tasks: [], notes: [] };
+  let outbox = [];  // operazioni da inviare a Supabase: { op:'up'|'del', tipo, id }
+
+  // ── Supabase ─────────────────────────────────────────────────
+  // Chiave pubblica (publishable/anon): i dati sono protetti dalle policy RLS
+  const SB_URL = 'https://eoswkplehhmtxtattsha.supabase.co';
+  const SB_KEY = 'sb_publishable_oGZUVlhuchUE8a89k9FO5g_XrCj_Gg-';
+  const APP_URL = window.location.origin + window.location.pathname.replace(/\/[^/]*$/, '/');
+  const sb = window.supabase
+    ? window.supabase.createClient(SB_URL, SB_KEY, {
+        auth: { flowType: 'pkce', persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
+      })
+    : null;
+  let user = null;
+  let lastSync = null, lastErr = '';
+  const TABLES = { appuntamento: 'mayday_appuntamenti', task: 'mayday_task', nota: 'mayday_note' };
+  const LISTS  = { appuntamento: 'appointments',        task: 'tasks',       nota: 'notes' };
 
   // ── Settings ─────────────────────────────────────────────────
   let cfg = {
@@ -755,12 +802,299 @@ const A = (() => {
 
   // ── Persistence ──────────────────────────────────────────────
   function load() {
-    try { const d = localStorage.getItem('md_db');  if (d) db  = JSON.parse(d); } catch{}
+    try { const d = localStorage.getItem('md_db');  if (d) db  = { ...db, ...JSON.parse(d) }; } catch{}
     try { const s = localStorage.getItem('md_cfg'); if (s) cfg = { ...cfg, ...JSON.parse(s) }; } catch{}
+    try { const o = localStorage.getItem('md_outbox'); if (o) outbox = JSON.parse(o) || []; } catch{}
   }
-  function save()    { localStorage.setItem('md_db',  JSON.stringify(db));  }
-  function saveCfg() { localStorage.setItem('md_cfg', JSON.stringify(cfg)); }
-  function uid()     { return Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
+  function save()       { localStorage.setItem('md_db',  JSON.stringify(db));  }
+  function saveCfg()    { localStorage.setItem('md_cfg', JSON.stringify(cfg)); }
+  function saveOutbox() { localStorage.setItem('md_outbox', JSON.stringify(outbox)); }
+  function uid() {
+    if (crypto.randomUUID) return crypto.randomUUID();
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+      const r = Math.random()*16|0; return (c==='x' ? r : (r&3|8)).toString(16);
+    });
+  }
+  const isUuid = s => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s || '');
+  const isDate = s => /^\d{4}-\d{2}-\d{2}$/.test(s || '');
+  const tipoOf = t => (t === 'appuntamento' || t === 'task') ? t : 'nota';
+  function findItem(tipo, id) { return (db[LISTS[tipo]] || []).find(x => x.id === id); }
+
+  // Gli elementi creati prima della v2.0 hanno un id breve: diventa legacy_id e ricevono un uuid
+  function upgradeIds() {
+    let changed = false;
+    for (const tipo of Object.keys(LISTS)) {
+      for (const it of db[LISTS[tipo]] || []) {
+        if (!it.tipo) it.tipo = tipo;
+        if (isUuid(it.id)) continue;
+        if (it.id) it.legacy_id = it.legacy_id || String(it.id);
+        it.id = uid();
+        changed = true;
+      }
+    }
+    if (changed) save();
+  }
+
+  // Salva in locale e mette in coda l'invio (l'ultima operazione sullo stesso elemento vince)
+  function enqueue(op, tipo, id) {
+    tipo = tipoOf(tipo);
+    if (op === 'up') { const it = findItem(tipo, id); if (it) it.aggiornato = new Date().toISOString(); }
+    save();
+    outbox = outbox.filter(o => !(o.tipo === tipo && o.id === id));
+    outbox.push({ op, tipo, id });
+    saveOutbox();
+    sync();
+  }
+
+  // ── Conversione tra formato dell'app e righe Supabase ────────
+  function isoTs(s) { const d = new Date(s || Date.now()); return isNaN(d) ? new Date().toISOString() : d.toISOString(); }
+  function normOra(s) {
+    const m = String(s || '').match(/^(\d{1,2}):(\d{2})/);
+    return m ? m[1].padStart(2,'0') + ':' + m[2] : null;
+  }
+
+  function toRow(tipo, it) {
+    const r = {
+      id: it.id, user_id: user.id, legacy_id: it.legacy_id || null,
+      cliente: it.cliente || '', cliente_id: isUuid(it.cliente_id) ? it.cliente_id : null,
+      descrizione: it.descrizione || '',
+      creato: isoTs(it.creato), aggiornato: isoTs(it.aggiornato || it.creato),
+    };
+    if (tipo === 'appuntamento') Object.assign(r, {
+      data: isDate(it.data) ? it.data : null, ora: normOra(it.ora),
+      luogo: it.luogo || '', calendario: it.calendario || null,
+    });
+    if (tipo === 'task') Object.assign(r, {
+      scadenza: isDate(it.scadenza) ? it.scadenza : null,
+      priorita: ['alta','media','bassa'].includes(it.priorita) ? it.priorita : 'media',
+      completato: !!it.completato,
+    });
+    return r;
+  }
+
+  function fromRow(tipo, r) {
+    const it = { id: r.id, tipo, cliente: r.cliente || '', descrizione: r.descrizione || '',
+                 creato: isoTs(r.creato), aggiornato: isoTs(r.aggiornato) };
+    if (r.legacy_id)  it.legacy_id  = r.legacy_id;
+    if (r.cliente_id) it.cliente_id = r.cliente_id;
+    if (tipo === 'appuntamento') {
+      Object.assign(it, { data: r.data || '', ora: normOra(r.ora) || '', luogo: r.luogo || '' });
+      if (r.calendario) it.calendario = r.calendario;
+    }
+    if (tipo === 'task') Object.assign(it, { scadenza: r.scadenza || '', priorita: r.priorita || 'media', completato: !!r.completato });
+    return it;
+  }
+
+  // ── Sincronizzazione ─────────────────────────────────────────
+  let syncP = null, syncAgain = false;
+  function sync() {
+    if (syncP) { syncAgain = true; return syncP; }
+    syncP = (async () => {
+      let ok;
+      do { syncAgain = false; ok = await doSync(); } while (syncAgain && ok);
+      return ok;
+    })().finally(() => { syncP = null; updateAccountUI(); });
+    return syncP;
+  }
+
+  async function doSync() {
+    if (!sb || !user || !navigator.onLine) return false;
+    if (localStorage.getItem('md_migrated') !== user.id) return false;
+    try {
+      await flush();
+      await pull();
+      lastSync = new Date(); lastErr = '';
+      return true;
+    } catch (e) {
+      lastErr = e.message || String(e);
+      return false;
+    }
+  }
+
+  // Invia la coda; le operazioni restano in coda finché Supabase non conferma
+  async function flush() {
+    const ops = [...outbox];
+    if (!ops.length) return;
+    for (const tipo of Object.keys(TABLES)) {
+      const t = TABLES[tipo];
+      const rows = ops.filter(o => o.tipo === tipo && o.op === 'up')
+        .map(o => findItem(tipo, o.id)).filter(Boolean).map(it => toRow(tipo, it));
+      const fresh  = rows.filter(r => !r.legacy_id);
+      const legacy = rows.filter(r =>  r.legacy_id);   // importati: niente doppioni grazie a legacy_id
+      if (fresh.length)  { const { error } = await sb.from(t).upsert(fresh,  { onConflict: 'id' });                if (error) throw error; }
+      if (legacy.length) { const { error } = await sb.from(t).upsert(legacy, { onConflict: 'user_id,legacy_id' }); if (error) throw error; }
+      const dels = ops.filter(o => o.tipo === tipo && o.op === 'del').map(o => o.id);
+      if (dels.length)   { const { error } = await sb.from(t).delete().in('id', dels);                            if (error) throw error; }
+    }
+    // Toglie solo le operazioni inviate: nel frattempo potrebbero esserne arrivate altre
+    outbox = outbox.filter(o => !ops.includes(o));
+    saveOutbox();
+  }
+
+  async function fetchAll(table) {
+    const out = [];
+    for (let from = 0; ; from += 1000) {
+      const { data, error } = await sb.from(table).select('*').order('id').range(from, from + 999);
+      if (error) throw error;
+      out.push(...data);
+      if (data.length < 1000) return out;
+    }
+  }
+
+  // Scarica tutto da Supabase; le modifiche ancora in coda prevalgono
+  async function pull() {
+    const fresh = { appointments: [], tasks: [], notes: [] };
+    for (const tipo of Object.keys(TABLES)) {
+      fresh[LISTS[tipo]] = (await fetchAll(TABLES[tipo])).map(r => fromRow(tipo, r));
+    }
+    for (const o of outbox) {
+      const list = fresh[LISTS[o.tipo]];
+      const i = list.findIndex(x => x.id === o.id);
+      if (o.op === 'del') { if (i >= 0) list.splice(i, 1); continue; }
+      const local = findItem(o.tipo, o.id);
+      if (!local) continue;
+      if (i >= 0) list[i] = local; else list.push(local);
+    }
+    const before = JSON.stringify(db);
+    db = fresh; save();
+    if (JSON.stringify(db) !== before) rerender();
+  }
+
+  // ── Account (magic link) ─────────────────────────────────────
+  function initAuth() {
+    if (!sb) { updateAccountUI(); return; }
+    sb.auth.onAuthStateChange((ev, session) => {
+      const u = session?.user || null;
+      // Le chiamate a Supabase vanno fatte fuori dal callback
+      if (u && u.id !== user?.id) setTimeout(() => onSignedIn(u), 0);
+      else if (!u && user) { user = null; updateAccountUI(); }
+    });
+  }
+
+  function onSignedIn(u) {
+    user = u;
+    if (/[?&]code=/.test(window.location.search)) history.replaceState(null, '', window.location.pathname);
+    updateAccountUI();
+    if (localStorage.getItem('md_migrated') !== user.id) askMigration();
+    else sync();
+  }
+
+  async function sendLink() {
+    if (!sb) { toast('⚠️ Supabase non raggiungibile: controlla la connessione'); return; }
+    const email = q('a-email').trim();
+    if (!email) { toast('⚠️ Inserisci l\'email'); return; }
+    const btn = document.getElementById('a-send');
+    btn.disabled = true;
+    const { error } = await sb.auth.signInWithOtp({ email, options: { emailRedirectTo: APP_URL, shouldCreateUser: false } });
+    btn.disabled = false;
+    if (error) toast('❌ ' + error.message, 5000);
+    else toast('📧 Link inviato: aprilo con Samsung Internet', 5000);
+  }
+
+  async function logout() {
+    if (sb) await sb.auth.signOut();
+    user = null; updateAccountUI();
+    toast('👋 Uscito · i dati restano sul telefono');
+  }
+
+  async function syncNow() {
+    if (!navigator.onLine) { toast('📵 Sei offline'); return; }
+    toast('🔄 Sincronizzo…');
+    toast(await sync() ? '✅ Sincronizzato' : '❌ Sincronizzazione non riuscita' + (lastErr ? ': ' + lastErr : ''), 4000);
+  }
+
+  // Primo collegamento: carica su Supabase i dati che sono già sul telefono
+  function askMigration() {
+    const n = db.appointments.length + db.tasks.length + db.notes.length;
+    if (!n) { migrate(); return; }
+    openModal(`
+      <div class="sheet-title">☁️ Primo collegamento</div>
+      <p style="margin-bottom:10px;line-height:1.5;font-size:16px">
+        Sul telefono ci sono <strong>${n} elementi</strong> (appuntamenti, task e note).<br>Li carico su Supabase?
+      </p>
+      <div class="hint">Una copia di sicurezza resta comunque sul telefono.</div>
+      <div class="btn-row">
+        <button class="btn btn-sec" onclick="A.closeModal()">Non ora</button>
+        <button class="btn btn-ok" onclick="A.migrate()">☁️ Carica</button>
+      </div>`);
+  }
+
+  async function migrate() {
+    if (!user) return;
+    if (!localStorage.getItem('md_db_backup_v1')) localStorage.setItem('md_db_backup_v1', JSON.stringify(db));
+    for (const tipo of Object.keys(LISTS))
+      for (const it of db[LISTS[tipo]])
+        if (!outbox.some(o => o.tipo === tipo && o.id === it.id)) outbox.push({ op: 'up', tipo, id: it.id });
+    saveOutbox();
+    localStorage.setItem('md_migrated', user.id);
+    closeModal();
+    const n = outbox.length;
+    if (n) toast('☁️ Caricamento in corso…');
+    const ok = await sync();
+    if (n) toast(ok && !outbox.length ? '✅ Dati caricati su Supabase' : '⚠️ Caricamento non completato: riprovo appena possibile', 4000);
+  }
+
+  function updateAccountUI() {
+    const dot = document.getElementById('a-dot');
+    if (!dot) return;
+    const txt = document.getElementById('a-txt');
+    dot.classList.toggle('on', !!user);
+    txt.textContent = !sb ? 'Supabase non caricato (sei offline?)'
+      : user ? 'Collegato: ' + user.email
+      : 'Non collegato · dati solo sul telefono';
+    document.getElementById('a-login').style.display  = user ? 'none' : '';
+    document.getElementById('a-logged').style.display = user ? '' : 'none';
+    const p = [];
+    p.push(outbox.length ? `⏳ In attesa di invio: ${outbox.length}` : '✓ Niente in attesa di invio');
+    if (lastSync) p.push('ultima sincronizzazione ' + lastSync.toLocaleTimeString('it-IT', { hour:'2-digit', minute:'2-digit' }));
+    if (lastErr)  p.push('errore: ' + lastErr);
+    document.getElementById('a-sync').textContent = p.join(' · ');
+  }
+
+  // ── Registrazioni in attesa (IndexedDB) ──────────────────────
+  // L'audio resta salvato sul telefono finché la dettatura non è stata gestita
+  function recDb() {
+    return new Promise((res, rej) => {
+      const r = indexedDB.open('mayday', 1);
+      r.onupgradeneeded = () => r.result.createObjectStore('rec', { keyPath: 'id' });
+      r.onsuccess = () => res(r.result);
+      r.onerror   = () => rej(r.error);
+    });
+  }
+  async function recTx(mode, fn) {
+    const d = await recDb();
+    return new Promise((res, rej) => {
+      const tx  = d.transaction('rec', mode);
+      const req = fn(tx.objectStore('rec'));
+      tx.oncomplete = () => { d.close(); res(req.result); };
+      tx.onerror    = () => { d.close(); rej(tx.error); };
+    });
+  }
+  const recPut = r  => recTx('readwrite', s => s.put(r)).then(() => true).catch(() => false);
+  const recDel = id => recTx('readwrite', s => s.delete(id)).catch(() => {});
+  const recAll = () => recTx('readonly',  s => s.getAll()).then(l => l || []).catch(() => []);
+
+  async function renderPending() {
+    const el = document.getElementById('pending');
+    if (!el) return;
+    const n = (await recAll()).filter(r => r.id !== st.qRec).length;
+    el.innerHTML = n
+      ? `<div style="padding:0 12px 8px"><button class="btn btn-sec" onclick="A.processPending()">🎙️  ${n} ${n > 1 ? 'registrazioni' : 'registrazione'} da elaborare</button></div>`
+      : '';
+  }
+
+  async function processPending() {
+    if (st.busy || st.rec) return;
+    const list = (await recAll()).sort((a,b) => (a.creato||'').localeCompare(b.creato||''));
+    if (!list.length) { renderPending(); return; }
+    if (!navigator.onLine) { toast('📵 Sei offline: riprova quando torna la rete'); return; }
+    st.busy = true;
+    setRecUI('proc', '⏳', 'ANALISI', 'Elaboro la registrazione salvata…');
+    await processRec(list[0], true);
+    setRecUI('', '🎙️', 'REGISTRA', 'Tocca per registrare');
+    st.busy = false;
+    renderPending();
+  }
 
   // ── Navigation ───────────────────────────────────────────────
   function go(view) {
@@ -774,7 +1108,11 @@ const A = (() => {
     document.querySelectorAll('.nitem')[idx]?.classList.add('on');
 
     st.view = view;
-    if (view === 'home')   renderRecent();
+    if (view === 'agenda' || view === 'task') {
+      document.querySelectorAll(`#v-${view} .chip`).forEach((b,i) => b.classList.toggle('on', i === 0));
+      if (view === 'agenda') st.fA = 'all'; else st.fT = 'all';
+    }
+    if (view === 'home')   { renderRecent(); renderPending(); }
     if (view === 'agenda') renderAppts('all');
     if (view === 'task')   renderTasks('all');
     if (view === 'note')   renderNotes('');
@@ -787,6 +1125,7 @@ const A = (() => {
   }
 
   async function startRec() {
+    if (st.busy) return;
     if (!cfg.groqKey) {
       toast('⚠️ Imposta la Groq API key nelle impostazioni');
       go('cfg'); return;
@@ -831,22 +1170,34 @@ const A = (() => {
   }
 
   async function onRecStop() {
+    st.busy = true;
     const mime = st.mr?.mimeType || 'audio/webm';
     const blob = new Blob(st.chunks, { type: mime });
+    // Prima di tutto salva l'audio sul telefono: se la trascrizione fallisce non va perso
+    const rec  = { id: uid(), blob, mime, creato: new Date().toISOString() };
+    const kept = await recPut(rec);
+    await processRec(rec, kept);
+    setRecUI('', '🎙️', 'REGISTRA', 'Tocca per registrare');
+    document.getElementById('rec-timer').textContent = '';
+    st.audioCtx?.close().catch(()=>{});
+    st.busy = false;
+    renderPending();
+  }
+
+  // Trascrive ed estrae; se qualcosa va storto la registrazione resta salvata per riprovare
+  async function processRec(rec, kept) {
     try {
-      const tx = await transcribe(blob, mime);
+      const tx = await transcribe(rec.blob, rec.mime);
       const items = await extract(tx);
       const err = items[0]?._errore;
       if (err === 'troncata') toast('⚠️ Gemini non ha completato la risposta. Ho messo la tua dettatura come nota: puoi cambiarla o riprovare.', 6000);
       else if (err) toast('⚠️ Gemini ha risposto in modo illeggibile. Ho messo la tua dettatura come nota: controlla i campi prima di salvare.', 6000);
-      st.queue = items; st.qIdx = 0; st.qTx = tx; st.qSaved = 0;
+      st.queue = items; st.qIdx = 0; st.qTx = tx; st.qSaved = 0; st.qRec = kept ? rec.id : null;
       await showConfirmModal(tx, items[0]);
     } catch(e) {
-      toast('❌ ' + e.message);
+      const why = navigator.onLine ? e.message : 'sei offline';
+      toast(kept ? `💾 Registrazione conservata (${why}): la trovi in Home` : '❌ ' + e.message, 6000);
     }
-    setRecUI('', '🎙️', 'REGISTRA', 'Tocca per registrare');
-    document.getElementById('rec-timer').textContent = '';
-    st.audioCtx?.close().catch(()=>{});
   }
 
   function setRecUI(cls, ico, lbl, status) {
@@ -946,7 +1297,9 @@ const A = (() => {
   };
 
   async function extract(text) {
-    if (!cfg.geminiKey) return fallbackItem(text);
+    // Senza chiave sul telefono usa la funzione gemini-proxy di Supabase (chiave sul server)
+    const session = !cfg.geminiKey && sb && user ? (await sb.auth.getSession()).data.session : null;
+    if (!cfg.geminiKey && !session) return fallbackItem(text);
 
     const d = new Date();
     const today = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
@@ -970,12 +1323,20 @@ Regole:
 - Priorità: "alta" se urgente o scadenza entro 2 giorni, altrimenti "media"
 - Nome cliente: solo nome proprio senza titoli`;
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${cfg.geminiKey}`;
-    const call = gen => fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: gen }),
-    });
+    const model = 'gemini-3-flash-preview';
+    const call = gen => {
+      const body = { contents: [{ parts: [{ text: prompt }] }], generationConfig: gen };
+      if (cfg.geminiKey) return fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${cfg.geminiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      return fetch(`${SB_URL}/functions/v1/gemini-proxy`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: SB_KEY, Authorization: 'Bearer ' + session.access_token },
+        body: JSON.stringify({ model, payload: body }),
+      });
+    };
     const base = { temperature: 0.1, maxOutputTokens: 8192, responseMimeType: 'application/json' };
     let r = await call({ ...base, responseSchema: GEMINI_SCHEMA, thinkingConfig: { thinkingLevel: 'low' } });
     // Se il modello rifiuta schema/thinkingConfig, riprova con la configurazione minima
@@ -1039,9 +1400,9 @@ Regole:
 
   // Ripara le voci salvate dalle versioni precedenti con il JSON grezzo nella descrizione
   function repairOldItems() {
-    let changed = false;
-    for (const list of [db.appointments, db.tasks, db.notes]) {
-      for (const it of list || []) {
+    const changed = [];
+    for (const tipo of Object.keys(LISTS)) {
+      for (const it of db[LISTS[tipo]] || []) {
         if (!looksLikeJson(it.descrizione)) continue;
         const p = parseGeminiJson(it.descrizione)[0];
         const ex = p ? normalizeExtraction(p) : null;
@@ -1051,10 +1412,10 @@ Regole:
           if (!it.cliente && ex.cliente) it.cliente = ex.cliente;
           if (!it.luogo && ex.luogo)     it.luogo   = ex.luogo;
         }
-        changed = true;
+        changed.push([tipo, it.id]);
       }
     }
-    if (changed) save();
+    changed.forEach(([tipo, id]) => enqueue('up', tipo, id));
   }
 
   // ── Google Contacts ───────────────────────────────────────────
@@ -1093,6 +1454,14 @@ Regole:
     const h = window.location.hash;
     if (!h) return;
     const p = new URLSearchParams(h.slice(1));
+    // Magic link scaduto o già usato: Supabase rimanda qui con l'errore
+    const err = p.get('error_description') || new URLSearchParams(window.location.search).get('error_description');
+    if (err) {
+      history.replaceState(null, '', window.location.pathname);
+      toast('❌ Accesso non riuscito: ' + err, 6000);
+      return;
+    }
+    // Il magic link di Supabase (PKCE) usa ?code=, quindi un token qui è solo quello di Google
     const tok = p.get('access_token');
     if (tok) {
       cfg.googleToken = tok;
@@ -1185,7 +1554,7 @@ Regole:
       ? `<div class="flbl" style="margin-bottom:6px">Elemento ${st.qIdx + 1} di ${tot}</div>` : '';
     const cancelBtn = tot > 1
       ? `<button class="btn btn-sec" onclick="A.skipEx()">✕ Salta</button>`
-      : `<button class="btn btn-sec" onclick="A.closeModal()">✕ Annulla</button>`;
+      : `<button class="btn btn-sec" onclick="A.skipEx()">✕ Annulla</button>`;
 
     openModal(`
       ${counter}
@@ -1240,7 +1609,7 @@ Regole:
         creato: now,
       });
     }
-    save();
+    enqueue('up', tipo, id);
     renderRecent();
     st.qSaved++;
     nextEx();
@@ -1255,6 +1624,10 @@ Regole:
       showConfirmModal(st.qTx, st.queue[st.qIdx]);
       return;
     }
+    // Dettatura gestita del tutto: l'audio salvato non serve più
+    const recId = st.qRec;
+    st.qRec = null;
+    if (recId) recDel(recId).then(renderPending);
     closeModal();
     const n = st.qSaved;
     st.queue = []; st.qIdx = 0; st.qSaved = 0;
@@ -1380,8 +1753,8 @@ Regole:
     const t = db.tasks.find(x=>x.id===id);
     if (!t) return;
     t.completato = !t.completato;
-    save();
-    if (st.view==='task') renderTasks('all');
+    enqueue('up', 'task', id);
+    if (st.view==='task') renderTasks(st.fT);
     else renderRecent();
     toast(t.completato?'✅ Completato':'↩️ Riaperto');
   }
@@ -1400,16 +1773,16 @@ Regole:
     if (tipo==='appuntamento') db.appointments=db.appointments.filter(x=>x.id!==id);
     else if (tipo==='task')    db.tasks=db.tasks.filter(x=>x.id!==id);
     else                       db.notes=db.notes.filter(x=>x.id!==id);
-    save();
+    enqueue('del', tipo, id);
     document.getElementById('card-'+id)?.remove();
     toast('🗑️ Eliminato');
   }
 
   function rerender() {
     if (st.view==='home')   renderRecent();
-    if (st.view==='agenda') renderAppts('all');
-    if (st.view==='task')   renderTasks('all');
-    if (st.view==='note')   renderNotes('');
+    if (st.view==='agenda') renderAppts(st.fA);
+    if (st.view==='task')   renderTasks(st.fT);
+    if (st.view==='note')   renderNotes(document.getElementById('note-search').value);
   }
 
   function editItem(id, tipo) {
@@ -1480,7 +1853,7 @@ Regole:
       const it=db.notes.find(x=>x.id===id);
       if(it){ it.cliente=q('e-cli');it.descrizione=q('e-desc'); }
     }
-    save(); closeModal(); rerender(); toast('✅ Modificato!');
+    enqueue('up', tipo, id); closeModal(); rerender(); toast('✅ Modificato!');
   }
 
   // ── Google Calendar (link precompilato, nessun accesso Google) ─
@@ -1546,7 +1919,7 @@ Regole:
     if (!window.open(url, '_blank')) window.location.href = url;
 
     it.calendario = { il: new Date().toISOString(), data: a.data||'', ora: a.ora||'' };
-    save();
+    enqueue('up', 'appuntamento', id);
     // Aggiorna solo la scheda (in Home e in Agenda) senza perdere il filtro scelto
     document.querySelectorAll(`[id="card-${id}"]`).forEach(c => { c.outerHTML = renderCard(it); });
     const stEl = document.getElementById('e-calst');
@@ -1557,11 +1930,13 @@ Regole:
   function fAppt(btn, f) {
     document.querySelectorAll('#v-agenda .chip').forEach(b=>b.classList.remove('on'));
     btn.classList.add('on');
+    st.fA = f;
     renderAppts(f);
   }
   function fTask(btn, f) {
     document.querySelectorAll('#v-task .chip').forEach(b=>b.classList.remove('on'));
     btn.classList.add('on');
+    st.fT = f;
     renderTasks(f);
   }
   function searchNotes(v) { renderNotes(v); }
@@ -1574,6 +1949,12 @@ Regole:
   function closeModal() {
     document.getElementById('overlay').classList.remove('on');
   }
+  // Tocco fuori dalla scheda: se era una dettatura, l'audio resta tra quelle da elaborare
+  function dismissModal() {
+    closeModal();
+    st.qRec = null; st.queue = []; st.qIdx = 0; st.qSaved = 0;
+    renderPending();
+  }
 
   // ── Settings ─────────────────────────────────────────────────
   function setSetting(k,v) { cfg[k]=v; saveCfg(); toast('💾 Salvato'); }
@@ -1583,29 +1964,55 @@ Regole:
     document.getElementById('s-gem').value  = cfg.geminiKey||'';
     document.getElementById('s-gcid').value = cfg.googleClientId||'';
     updateGoogleUI();
+    updateAccountUI();
   }
 
   // ── Export / Import ───────────────────────────────────────────
-  function exportData() {
-    const blob = new Blob([JSON.stringify({...db, exported: new Date().toISOString()},null,2)], {type:'application/json'});
+  // Se possibile esporta i dati appena scaricati da Supabase, altrimenti la copia del telefono
+  async function exportData() {
+    let fromServer = false;
+    if (user && navigator.onLine && localStorage.getItem('md_migrated') === user.id) {
+      toast('⏳ Scarico i dati da Supabase…');
+      fromServer = await sync();
+    }
+    const out = {
+      appointments: db.appointments, tasks: db.tasks, notes: db.notes,
+      exported: new Date().toISOString(),
+      fonte: fromServer ? 'supabase' : 'telefono',
+    };
+    const blob = new Blob([JSON.stringify(out,null,2)], {type:'application/json'});
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download = `mayday-${new Date().toISOString().split('T')[0]}.json`;
     a.click();
     URL.revokeObjectURL(a.href);
+    toast(fromServer ? '📤 Esportati i dati di Supabase' : '⚠️ Offline o non collegato: esportata la copia del telefono', 4000);
   }
   function importData() { document.getElementById('imp-file').click(); }
+  // Aggiunge solo gli elementi che non ci sono già (stesso id o stesso id della v1)
   function handleImport(inp) {
     const file=inp.files[0]; if(!file) return;
     const r=new FileReader();
     r.onload=e=>{
-      try {
-        const d=JSON.parse(e.target.result);
-        if(d.appointments) db.appointments=[...db.appointments,...d.appointments];
-        if(d.tasks)        db.tasks=[...db.tasks,...d.tasks];
-        if(d.notes)        db.notes=[...db.notes,...d.notes];
-        save(); rerender(); toast('✅ Importato!');
-      } catch { toast('❌ File non valido'); }
+      let d;
+      try { d=JSON.parse(e.target.result); } catch { toast('❌ File non valido'); return; }
+      let added = 0;
+      for (const tipo of Object.keys(LISTS)) {
+        const list = db[LISTS[tipo]];
+        for (const raw of (Array.isArray(d[LISTS[tipo]]) ? d[LISTS[tipo]] : [])) {
+          if (!raw || typeof raw !== 'object') continue;
+          const it = { ...raw, tipo };
+          if (!isUuid(it.id)) { if (it.id) it.legacy_id = it.legacy_id || String(it.id); it.id = null; }
+          if (list.some(x => (it.id && x.id === it.id) || (it.legacy_id && x.legacy_id === it.legacy_id))) continue;
+          if (!it.id) it.id = uid();
+          list.push(it);
+          outbox = outbox.filter(o => !(o.tipo === tipo && o.id === it.id));
+          outbox.push({ op: 'up', tipo, id: it.id });
+          added++;
+        }
+      }
+      save(); saveOutbox(); rerender(); sync();
+      toast(added ? `✅ Importati ${added} elementi` : 'Nessun elemento nuovo da importare');
     };
     r.readAsText(file); inp.value='';
   }
@@ -1613,7 +2020,7 @@ Regole:
     openModal(`
       <div class="sheet-title">⚠️ Cancella tutti i dati</div>
       <p style="color:var(--dim);margin-bottom:18px;line-height:1.5;font-size:14px">
-        Verranno eliminati tutti gli appuntamenti, task e note. L'azione non è reversibile.
+        Verranno eliminati tutti gli appuntamenti, task e note, sul telefono e su Supabase. L'azione non è reversibile.
       </p>
       <div class="btn-row">
         <button class="btn btn-sec" onclick="A.closeModal()">Annulla</button>
@@ -1621,7 +2028,14 @@ Regole:
       </div>`);
   }
   function confirmClearAll() {
-    db={appointments:[],tasks:[],notes:[]}; save(); closeModal(); rerender(); toast('🗑️ Dati eliminati');
+    for (const tipo of Object.keys(LISTS)) {
+      for (const it of db[LISTS[tipo]]) {
+        outbox = outbox.filter(o => !(o.tipo === tipo && o.id === it.id));
+        outbox.push({ op: 'del', tipo, id: it.id });
+      }
+    }
+    db={appointments:[],tasks:[],notes:[]}; save(); saveOutbox(); sync();
+    closeModal(); rerender(); toast('🗑️ Dati eliminati');
   }
 
   // ── Utilities ─────────────────────────────────────────────────
@@ -1653,9 +2067,14 @@ Regole:
   // ── Init ──────────────────────────────────────────────────────
   function init() {
     load();
+    upgradeIds();
     repairOldItems();
     checkOAuthCallback();
     renderRecent();
+    renderPending();
+    initAuth();
+    window.addEventListener('online', () => { sync(); renderPending(); });
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') sync(); });
     if ('serviceWorker' in navigator)
       navigator.serviceWorker.register('./sw.js').catch(()=>{});
   }
@@ -1667,11 +2086,12 @@ Regole:
     editItem, saveEdit,
     delItem, confirmDel, rerender,
     toggleTask, addToCal,
-    openModal, closeModal,
+    openModal, closeModal, dismissModal,
     setSetting,
     exportData, importData, handleImport,
     clearAll, confirmClearAll,
     gAuth,
+    sendLink, logout, syncNow, migrate, processPending,
     init,
   };
 })();
