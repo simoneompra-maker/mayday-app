@@ -549,6 +549,51 @@
     /* ── Row layout helper ── */
     .row { display: flex; gap: 10px; }
     .row .fg { flex: 1; }
+
+    /* ── Clienti ── */
+    .hdr-action .icobtn { font-size: 22px; }
+    .cli-row {
+      display: flex; align-items: center; gap: 11px;
+      margin: 0 12px 8px; padding: 11px 13px;
+      background: var(--bg2); border: 1px solid var(--border); border-radius: var(--r);
+      cursor: pointer; -webkit-tap-highlight-color: transparent;
+    }
+    .cli-row:active { background: var(--bg3); }
+    .cli-sub  { font-size: 14px; color: var(--dim); font-weight: 400; }
+    .cli-head { padding: 6px 16px 4px; }
+    .cli-top  { display: flex; align-items: center; gap: 12px; }
+    .cli-name { font-size: 21px; font-weight: 800; }
+    .cli-line { font-size: 15px; margin-top: 8px; word-break: break-all; }
+    .cli-line a { color: var(--blue); text-decoration: none; }
+    .cli-acts { display: flex; gap: 8px; margin: 12px 0 10px; }
+    .cli-acts a {
+      flex: 1; text-align: center; text-decoration: none;
+      padding: 11px 6px; border-radius: var(--r); font-weight: 800; font-size: 15px;
+      background: var(--bg3); color: var(--text); border: 1px solid var(--border);
+    }
+    .cli-acts a.wa { background: #25D366; color: #fff; border-color: #25D366; }
+    .back-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 8px 0; }
+    .back-btn {
+      background: none; border: none; color: var(--blue); font-size: 16px; font-weight: 700;
+      padding: 8px; cursor: pointer; font-family: inherit;
+    }
+    .card-cli.link { color: var(--blue); cursor: pointer; }
+    .cpick { border: 1px solid var(--border); border-radius: var(--r); padding: 10px 12px; background: var(--bg3); }
+    .cpick-cur { display: flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 700; }
+    .cpick-cur small { display: block; }
+    .opt {
+      display: block; width: 100%; text-align: left;
+      padding: 10px 12px; margin-top: 6px; border-radius: 10px;
+      border: 1px solid var(--border); background: var(--bg2); color: var(--text);
+      font-size: 15px; font-weight: 700; font-family: inherit; cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .opt small { display: block; color: var(--dim); font-size: 13px; font-weight: 400; }
+    .opt.new { color: var(--blue); }
+    .sg-row { padding: 10px 0; border-bottom: 1px solid var(--border); }
+    .sg-row .finp { padding: 8px 10px; }
+    .sg-top { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+    .sg-top input[type=checkbox] { width: 22px; height: 22px; flex-shrink: 0; }
   </style>
 </head>
 <body>
@@ -558,7 +603,9 @@
   <header class="hdr">
     <div class="hdr-logo">MAYDAY</div>
     <div class="hdr-title" id="hdr-title">Registrazione</div>
-    <div class="hdr-action"></div>
+    <div class="hdr-action">
+      <button class="icobtn" onclick="A.go('cfg')" title="Impostazioni">⚙️</button>
+    </div>
   </header>
 
   <!-- HOME -->
@@ -610,6 +657,22 @@
              oninput="A.searchNotes(this.value)">
     </div>
     <div id="note-list" style="margin-top:10px"></div>
+  </section>
+
+  <!-- CLIENTI -->
+  <section class="view" id="v-clienti">
+    <div style="padding:10px 12px 0">
+      <input type="search" class="finp" id="cli-search"
+             placeholder="🔍  Cerca nome, paese, telefono…"
+             oninput="A.renderClienti()">
+      <button class="btn btn-pr" style="margin-top:9px" onclick="A.editCli('')">➕  Nuovo cliente</button>
+    </div>
+    <div id="cli-list" style="margin-top:12px"></div>
+  </section>
+
+  <!-- SCHEDA CLIENTE -->
+  <section class="view" id="v-cliente">
+    <div id="cli-scheda"></div>
   </section>
 
   <!-- IMPOSTAZIONI -->
@@ -708,7 +771,7 @@
     </div>
 
     <div style="padding:16px;color:var(--dim);font-size:11px;text-align:center">
-      MAYDAY v2.0 · Uso personale · Dati su Supabase, copia offline sul telefono
+      MAYDAY v2.1 · Uso personale · Dati su Supabase, copia offline sul telefono
     </div>
   </section>
 
@@ -728,8 +791,8 @@
   <button class="nitem" onclick="A.go('note')">
     <span class="nitem-ico">📝</span><span>Note</span>
   </button>
-  <button class="nitem" onclick="A.go('cfg')">
-    <span class="nitem-ico">⚙️</span><span>Config</span>
+  <button class="nitem" onclick="A.go('clienti')">
+    <span class="nitem-ico">👤</span><span>Clienti</span>
   </button>
 </nav>
 
@@ -770,11 +833,20 @@ const A = (() => {
     busy: false,
     fA: 'all',      // filtro attivo in Agenda
     fT: 'all',      // filtro attivo in Task
+    cli: null,      // scheda cliente aperta
+    recCli: null,   // scheda per cui si sta registrando ("Registra per questo cliente")
+    qFixed: null,   // scheda a cui collegare tutti gli elementi della dettatura
+    qCli: null,     // scelta del cliente nella finestra aperta: { id } | { nuovo } | { id:null, caso, list, keepText }
+    qEx: null,      // elemento estratto che si sta confermando
+    pick: { ctx: 'inline', q: '' },  // selettore cliente: 'inline' (dentro la finestra) o 'move' (sposta)
+    anaRes: [],     // ultimi risultati dall'anagrafica negozio
+    editAna: null,  // collegamento all'anagrafica nella scheda in modifica
+    schedeAsked: false,
   };
 
   // ── DB ───────────────────────────────────────────────────────
   // Copia locale dei dati (cache offline); la fonte principale è Supabase
-  let db = { appointments: [], tasks: [], notes: [] };
+  let db = { clienti: [], appointments: [], tasks: [], notes: [] };
   let outbox = [];  // operazioni da inviare a Supabase: { op:'up'|'del', tipo, id }
 
   // ── Supabase ─────────────────────────────────────────────────
@@ -789,8 +861,9 @@ const A = (() => {
     : null;
   let user = null;
   let lastSync = null, lastErr = '';
-  const TABLES = { appuntamento: 'mayday_appuntamenti', task: 'mayday_task', nota: 'mayday_note' };
-  const LISTS  = { appuntamento: 'appointments',        task: 'tasks',       nota: 'notes' };
+  // Le schede clienti vengono per prime, così sono inviate prima degli elementi collegati
+  const TABLES = { cliente: 'mayday_clienti', appuntamento: 'mayday_appuntamenti', task: 'mayday_task', nota: 'mayday_note' };
+  const LISTS  = { cliente: 'clienti',        appuntamento: 'appointments',        task: 'tasks',       nota: 'notes' };
 
   // ── Settings ─────────────────────────────────────────────────
   let cfg = {
@@ -817,7 +890,7 @@ const A = (() => {
   }
   const isUuid = s => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s || '');
   const isDate = s => /^\d{4}-\d{2}-\d{2}$/.test(s || '');
-  const tipoOf = t => (t === 'appuntamento' || t === 'task') ? t : 'nota';
+  const tipoOf = t => (t in TABLES) ? t : 'nota';
   function findItem(tipo, id) { return (db[LISTS[tipo]] || []).find(x => x.id === id); }
 
   // Gli elementi creati prima della v2.0 hanno un id breve: diventa legacy_id e ricevono un uuid
@@ -854,6 +927,13 @@ const A = (() => {
   }
 
   function toRow(tipo, it) {
+    if (tipo === 'cliente') return {
+      id: it.id, user_id: user.id,
+      nome: it.nome || '', localita: it.localita || '', azienda: it.azienda || '',
+      telefono: it.telefono || '', email: it.email || '',
+      anagrafica_id: isUuid(it.anagrafica_id) ? it.anagrafica_id : null,
+      creato: isoTs(it.creato), aggiornato: isoTs(it.aggiornato || it.creato),
+    };
     const r = {
       id: it.id, user_id: user.id, legacy_id: it.legacy_id || null,
       cliente: it.cliente || '', cliente_id: isUuid(it.cliente_id) ? it.cliente_id : null,
@@ -873,6 +953,12 @@ const A = (() => {
   }
 
   function fromRow(tipo, r) {
+    if (tipo === 'cliente') {
+      const c = { id: r.id, tipo, nome: r.nome || '', localita: r.localita || '', azienda: r.azienda || '',
+                  telefono: r.telefono || '', email: r.email || '', creato: isoTs(r.creato), aggiornato: isoTs(r.aggiornato) };
+      if (r.anagrafica_id) c.anagrafica_id = r.anagrafica_id;
+      return c;
+    }
     const it = { id: r.id, tipo, cliente: r.cliente || '', descrizione: r.descrizione || '',
                  creato: isoTs(r.creato), aggiornato: isoTs(r.aggiornato) };
     if (r.legacy_id)  it.legacy_id  = r.legacy_id;
@@ -892,6 +978,7 @@ const A = (() => {
     syncP = (async () => {
       let ok;
       do { syncAgain = false; ok = await doSync(); } while (syncAgain && ok);
+      if (ok) setTimeout(maybeAskSchede, 300);
       return ok;
     })().finally(() => { syncP = null; updateAccountUI(); });
     return syncP;
@@ -943,7 +1030,7 @@ const A = (() => {
 
   // Scarica tutto da Supabase; le modifiche ancora in coda prevalgono
   async function pull() {
-    const fresh = { appointments: [], tasks: [], notes: [] };
+    const fresh = Object.fromEntries(Object.values(LISTS).map(l => [l, []]));
     for (const tipo of Object.keys(TABLES)) {
       fresh[LISTS[tipo]] = (await fetchAll(TABLES[tipo])).map(r => fromRow(tipo, r));
     }
@@ -1005,7 +1092,7 @@ const A = (() => {
 
   // Primo collegamento: carica su Supabase i dati che sono già sul telefono
   function askMigration() {
-    const n = db.appointments.length + db.tasks.length + db.notes.length;
+    const n = db.clienti.length + db.appointments.length + db.tasks.length + db.notes.length;
     if (!n) { migrate(); return; }
     openModal(`
       <div class="sheet-title">☁️ Primo collegamento</div>
@@ -1102,9 +1189,9 @@ const A = (() => {
     document.querySelectorAll('.nitem').forEach(b => b.classList.remove('on'));
     document.getElementById('v-' + view).classList.add('on');
 
-    const titles = { home:'Registrazione', agenda:'Agenda', task:'Task', note:'Note Clienti', cfg:'Impostazioni' };
+    const titles = { home:'Registrazione', agenda:'Agenda', task:'Task', note:'Note Clienti', clienti:'Clienti', cliente:'Scheda cliente', cfg:'Impostazioni' };
     document.getElementById('hdr-title').textContent = titles[view] || '';
-    const idx = ['home','agenda','task','note','cfg'].indexOf(view);
+    const idx = ['home','agenda','task','note','clienti'].indexOf(view === 'cliente' ? 'clienti' : view);
     document.querySelectorAll('.nitem')[idx]?.classList.add('on');
 
     st.view = view;
@@ -1116,12 +1203,28 @@ const A = (() => {
     if (view === 'agenda') renderAppts('all');
     if (view === 'task')   renderTasks('all');
     if (view === 'note')   renderNotes('');
+    if (view === 'clienti') renderClienti();
+    if (view === 'cliente') renderScheda();
     if (view === 'cfg')    renderCfg();
+    document.getElementById('v-' + view).scrollTop = 0;
   }
 
   // ── Recording ────────────────────────────────────────────────
   async function toggleRec() {
-    st.rec ? stopRec() : await startRec();
+    if (st.rec) { stopRec(); return; }
+    st.recCli = null;
+    await startRec();
+  }
+
+  // "Registra per questo cliente": il memo viene collegato direttamente alla scheda
+  async function recFor(cid) {
+    const c = getCli(cid);
+    if (!c || st.rec || st.busy) return;
+    go('home');
+    st.recCli = cid;
+    await startRec();
+    if (!st.rec) { st.recCli = null; return; }
+    document.getElementById('rec-status').textContent = 'Registrazione per ' + c.nome + '…';
   }
 
   async function startRec() {
@@ -1174,7 +1277,8 @@ const A = (() => {
     const mime = st.mr?.mimeType || 'audio/webm';
     const blob = new Blob(st.chunks, { type: mime });
     // Prima di tutto salva l'audio sul telefono: se la trascrizione fallisce non va perso
-    const rec  = { id: uid(), blob, mime, creato: new Date().toISOString() };
+    const rec  = { id: uid(), blob, mime, creato: new Date().toISOString(), cliente_id: st.recCli || null };
+    st.recCli = null;
     const kept = await recPut(rec);
     await processRec(rec, kept);
     setRecUI('', '🎙️', 'REGISTRA', 'Tocca per registrare');
@@ -1193,6 +1297,7 @@ const A = (() => {
       if (err === 'troncata') toast('⚠️ Gemini non ha completato la risposta. Ho messo la tua dettatura come nota: puoi cambiarla o riprovare.', 6000);
       else if (err) toast('⚠️ Gemini ha risposto in modo illeggibile. Ho messo la tua dettatura come nota: controlla i campi prima di salvare.', 6000);
       st.queue = items; st.qIdx = 0; st.qTx = tx; st.qSaved = 0; st.qRec = kept ? rec.id : null;
+      st.qFixed = rec.cliente_id && getCli(rec.cliente_id) ? rec.cliente_id : null;
       await showConfirmModal(tx, items[0]);
     } catch(e) {
       const why = navigator.onLine ? e.message : 'sei offline';
@@ -1267,7 +1372,7 @@ const A = (() => {
   // ── Gemini extraction ─────────────────────────────────────────
   // Restituisce sempre un elenco di elementi (uno per ogni azione dettata)
   function fallbackItem(text, errore) {
-    const it = { tipo:'nota', cliente:'', descrizione: text, data:'', ora:'', scadenza:'', priorita:'media', luogo:'' };
+    const it = { tipo:'nota', cliente:'', cliente_localita:'', cliente_azienda:'', descrizione: text, data:'', ora:'', scadenza:'', priorita:'media', luogo:'' };
     if (errore) it._errore = errore;
     return [it];
   }
@@ -1282,6 +1387,8 @@ const A = (() => {
           properties: {
             tipo:        { type: 'STRING', enum: ['appuntamento','task','nota'] },
             cliente:     { type: 'STRING' },
+            cliente_localita: { type: 'STRING' },
+            cliente_azienda:  { type: 'STRING' },
             data:        { type: 'STRING' },
             ora:         { type: 'STRING' },
             descrizione: { type: 'STRING' },
@@ -1310,7 +1417,7 @@ DETTATURA: "${text}"
 
 Rispondi SOLO con JSON puro, senza backtick, senza testo aggiuntivo, senza spiegazioni.
 Formato esatto:
-{"elementi":[{"tipo":"appuntamento"|"task"|"nota","cliente":"nome o stringa vuota","data":"YYYY-MM-DD o stringa vuota","ora":"HH:MM o stringa vuota","descrizione":"testo descrittivo conciso","scadenza":"YYYY-MM-DD o stringa vuota","priorita":"alta"|"media"|"bassa","luogo":"luogo o stringa vuota"}]}
+{"elementi":[{"tipo":"appuntamento"|"task"|"nota","cliente":"nome o stringa vuota","cliente_localita":"paese del cliente o stringa vuota","cliente_azienda":"ditta del cliente o stringa vuota","data":"YYYY-MM-DD o stringa vuota","ora":"HH:MM o stringa vuota","descrizione":"testo descrittivo conciso","scadenza":"YYYY-MM-DD o stringa vuota","priorita":"alta"|"media"|"bassa","luogo":"luogo o stringa vuota"}]}
 
 Regole:
 - Crea UN elemento per OGNI azione distinta. Una dettatura può contenere sia un appuntamento sia una o più task: separale sempre.
@@ -1321,7 +1428,11 @@ Regole:
 - Pronomi come "gli", "le", "mandargli" si riferiscono al cliente nominato prima: ripeti il suo nome in "cliente"
 - Date relative (domani, lunedì, venerdì, prossima settimana) → calcola da oggi: ${today} (${weekday})
 - Priorità: "alta" se urgente o scadenza entro 2 giorni, altrimenti "media"
-- Nome cliente: solo nome proprio senza titoli`;
+- "cliente" = nome e/o cognome della persona o della ditta, come detto (es. "Mario Rossi", "Rossi", "Verdi Giardini"), senza titoli come sig., dott., geom.
+- "cliente_localita" = paese o città DEL CLIENTE se detto (es. "Rossi di Pinerolo" → "Pinerolo"), altrimenti stringa vuota
+- "cliente_azienda" = nome della ditta se il cliente è una persona di un'azienda (es. "Luca della Verdi srl" → cliente "Luca", azienda "Verdi srl"), altrimenti stringa vuota
+- "luogo" resta il posto dell'appuntamento; se coincide con il paese del cliente compila entrambi
+- Non inventare: se il nome del cliente non è detto, "cliente" è stringa vuota`;
 
     const model = 'gemini-3-flash-preview';
     const call = gen => {
@@ -1380,6 +1491,8 @@ Regole:
     return {
       tipo:       ['appuntamento','task','nota'].includes(p.tipo) ? p.tipo : 'nota',
       cliente:    String(p.cliente    || ''),
+      cliente_localita: String(p.cliente_localita || ''),
+      cliente_azienda:  String(p.cliente_azienda  || ''),
       descrizione:String(p.descrizione|| p.nota || ''),
       data:       String(p.data       || ''),
       ora:        String(p.ora        || ''),
@@ -1492,6 +1605,15 @@ Regole:
     if (ex.cliente) contacts = await searchContacts(ex.cliente);
     st.contacts_pending = contacts;
 
+    // Cliente: scheda fissata ("Registra per questo cliente") oppure riconoscimento dal nome
+    st.qEx = ex;
+    st.pick = { ctx: 'inline', q: '' };
+    if (st.qFixed && getCli(st.qFixed)) st.qCli = { id: st.qFixed };
+    else {
+      const m = matchCli(ex);
+      st.qCli = m.caso === 'sicuro' ? { id: m.list[0].c.id, auto: true } : { id: null, caso: m.caso, list: m.list };
+    }
+
     const tipo = ex.tipo || 'nota';
     const tcls = { appuntamento:'ex-apt', task:'ex-task', nota:'ex-note' }[tipo] || 'ex-note';
     const tlab = { appuntamento:'📅 Appuntamento', task:'✅ Task', nota:'📝 Nota' }[tipo] || '📝 Nota';
@@ -1513,8 +1635,7 @@ Regole:
     let fields = '';
     if (tipo === 'appuntamento') {
       fields = `
-        <div class="fg"><label class="flbl">Cliente / Contatto</label>
-          <input type="text" class="finp" id="f-cli" value="${esc(ex.cliente||'')}"></div>
+        ${cliField()}
         <div class="row">
           <div class="fg"><label class="flbl">Data</label>
             <input type="date" class="finp" id="f-data" value="${ex.data||''}"></div>
@@ -1527,8 +1648,7 @@ Regole:
           <textarea class="finp" id="f-desc">${esc(ex.descrizione||'')}</textarea></div>`;
     } else if (tipo === 'task') {
       fields = `
-        <div class="fg"><label class="flbl">Cliente / Riguardo</label>
-          <input type="text" class="finp" id="f-cli" value="${esc(ex.cliente||'')}"></div>
+        ${cliField()}
         <div class="fg"><label class="flbl">Cosa fare</label>
           <textarea class="finp" id="f-desc">${esc(ex.descrizione||'')}</textarea></div>
         <div class="row">
@@ -1543,8 +1663,7 @@ Regole:
         </div>`;
     } else {
       fields = `
-        <div class="fg"><label class="flbl">Cliente</label>
-          <input type="text" class="finp" id="f-cli" value="${esc(ex.cliente||'')}"></div>
+        ${cliField()}
         <div class="fg"><label class="flbl">Nota</label>
           <textarea class="finp" id="f-desc" style="min-height:90px">${esc(ex.descrizione||'')}</textarea></div>`;
     }
@@ -1568,23 +1687,30 @@ Regole:
         ${cancelBtn}
         <button class="btn btn-ok" onclick="A.saveEx('${tipo}')">✓ Salva</button>
       </div>`);
+    renderCliPick();
   }
 
   function pickContact(i) {
     const c = st.contacts_pending[i];
     if (!c) return;
-    const el = document.getElementById('f-cli');
-    if (el) el.value = c.name;
+    // Scheda con lo stesso nome se c'è, altrimenti nuova scheda con telefono ed email del contatto
+    const same = db.clienti.find(x => normName(x.nome) === normName(c.name));
+    st.qCli = same ? { id: same.id } : { id: null, nuovo: {
+      nome: c.name, telefono: c.phone, email: c.email,
+      localita: st.qEx?.cliente_localita || '', azienda: st.qEx?.cliente_azienda || '',
+    } };
+    renderCliPick();
     toast('👤 ' + c.name + (c.phone ? '  ' + c.phone : ''));
   }
 
   function saveEx(tipo) {
     const now = new Date().toISOString();
     const id  = uid();
+    const cl  = resolvePick();
     if (tipo === 'appuntamento') {
       db.appointments.push({
         id, tipo,
-        cliente:    q('f-cli'),
+        cliente:    cl.nome, cliente_id: cl.id,
         data:       q('f-data'),
         ora:        q('f-ora'),
         luogo:      q('f-luogo'),
@@ -1594,7 +1720,7 @@ Regole:
     } else if (tipo === 'task') {
       db.tasks.push({
         id, tipo,
-        cliente:    q('f-cli'),
+        cliente:    cl.nome, cliente_id: cl.id,
         descrizione:q('f-desc'),
         scadenza:   q('f-scad'),
         priorita:   q('f-pri') || 'media',
@@ -1604,7 +1730,7 @@ Regole:
     } else {
       db.notes.push({
         id, tipo: 'nota',
-        cliente:    q('f-cli'),
+        cliente:    cl.nome, cliente_id: cl.id,
         descrizione:q('f-desc'),
         creato: now,
       });
@@ -1626,7 +1752,7 @@ Regole:
     }
     // Dettatura gestita del tutto: l'audio salvato non serve più
     const recId = st.qRec;
-    st.qRec = null;
+    st.qRec = null; st.qFixed = null;
     if (recId) recDel(recId).then(renderPending);
     closeModal();
     const n = st.qSaved;
@@ -1636,6 +1762,547 @@ Regole:
   }
 
   function q(id) { return document.getElementById(id)?.value || ''; }
+
+  // ── Schede clienti ────────────────────────────────────────────
+  function getCli(id) { return id ? db.clienti.find(c => c.id === id) || null : null; }
+  function itemsOf(cid) { return [...db.appointments, ...db.tasks, ...db.notes].filter(x => x.cliente_id === cid); }
+  function cliSub(c) { return c ? [c.localita, c.azienda].filter(Boolean).join(' · ') : ''; }
+  function initials(n) {
+    const p = String(n || '?').trim().split(/\s+/);
+    return ((p[0]?.[0] || '?') + (p.length > 1 ? p[p.length-1][0] : '')).toUpperCase();
+  }
+  // L'anagrafica del negozio è spesso in maiuscolo: "ROSSI MARIO" → "Rossi Mario"
+  function nice(s) {
+    s = String(s || '').trim();
+    return s && s === s.toUpperCase() ? s.toLowerCase().replace(/(^|[\s'’.-])\S/g, m => m.toUpperCase()) : s;
+  }
+
+  // Nome confrontabile: minuscolo, senza accenti, punteggiatura, titoli e forme societarie
+  const TITOLI = /\b(sig|sigg|sigra|signor|signora|signore|dott|dottor|dottore|dottoressa|geom|geometra|ing|ingegner|ingegnere|arch|architetto|avv|avvocato|rag|ragioniere|prof|srl|srls|snc|sas|spa|ditta|soc|societa)\b/g;
+  function normName(s) {
+    return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+      .replace(/[^a-z0-9]+/g, ' ').replace(TITOLI, ' ').replace(/\s+/g, ' ').trim();
+  }
+  function lev(a, b) {
+    const d = Array.from({ length: a.length + 1 }, (_, i) => [i]);
+    for (let j = 1; j <= b.length; j++) d[0][j] = j;
+    for (let i = 1; i <= a.length; i++)
+      for (let j = 1; j <= b.length; j++)
+        d[i][j] = Math.min(d[i-1][j] + 1, d[i][j-1] + 1, d[i-1][j-1] + (a[i-1] === b[j-1] ? 0 : 1));
+    return d[a.length][b.length];
+  }
+  // Parole quasi uguali (errori di trascrizione: "Rosi" / "Rossi")
+  function quasiUguali(a, b) {
+    if (a === b) return true;
+    const m = Math.min(a.length, b.length);
+    return m >= 4 && lev(a, b) <= (m >= 7 ? 2 : 1);
+  }
+
+  function scoreCli(ex, c) {
+    const said = normName(ex.cliente);
+    const a = said.split(' ').filter(Boolean);
+    if (!a.length) return 0;
+    const b = normName(c.nome + ' ' + (c.azienda || '')).split(' ').filter(Boolean);
+    let s;
+    if (said === normName(c.nome)) s = 100;
+    else if (a.every(t => b.includes(t))) s = 80;
+    else if (a.every(t => b.some(u => quasiUguali(t, u)))) s = 60;
+    else return 0;
+    const loc = normName(ex.cliente_localita), cl = normName(c.localita);
+    if (loc && cl) s += quasiUguali(loc, cl) ? 15 : -30;
+    const az = normName(ex.cliente_azienda), ca = normName(c.azienda);
+    if (az && ca && (ca.includes(az) || az.includes(ca))) s += 15;
+    return s;
+  }
+
+  // Tre casi: un solo cliente sicuro / più nomi simili / nessuno
+  function matchCli(ex) {
+    if (!normName(ex.cliente)) return { caso: 'vuoto', list: [] };
+    const list = db.clienti.map(c => ({ c, s: scoreCli(ex, c) })).filter(x => x.s >= 60).sort((x, y) => y.s - x.s);
+    if (!list.length) return { caso: 'nessuno', list };
+    if (list.length === 1 && list[0].s >= 80) return { caso: 'sicuro', list };
+    return { caso: 'simili', list: list.slice(0, 5) };
+  }
+
+  function lastActivity(c) {
+    return itemsOf(c.id).reduce((m, x) => (x.creato || '') > m ? x.creato : m, c.creato || '');
+  }
+  function findClienti(qv) {
+    const words = normName(qv).split(' ').filter(Boolean);
+    return db.clienti
+      .filter(c => {
+        const hay = normName([c.nome, c.localita, c.azienda, c.telefono, c.email].join(' '));
+        return words.every(w => hay.includes(w));
+      })
+      .sort((a, b) => lastActivity(b).localeCompare(lastActivity(a)));
+  }
+
+  function createCli(data) {
+    const c = {
+      id: uid(), tipo: 'cliente',
+      nome: (data.nome || '').trim(), localita: data.localita || '', azienda: data.azienda || '',
+      telefono: data.telefono || '', email: data.email || '',
+      creato: new Date().toISOString(),
+    };
+    if (data.anagrafica_id) c.anagrafica_id = data.anagrafica_id;
+    db.clienti.push(c);
+    enqueue('up', 'cliente', c.id);
+    return c;
+  }
+  // Riusa la scheda già collegata allo stesso cliente dell'anagrafica, se c'è
+  function ensureCli(data) {
+    return (data.anagrafica_id && db.clienti.find(c => c.anagrafica_id === data.anagrafica_id)) || createCli(data);
+  }
+
+  // ── Contatti cliccabili ───────────────────────────────────────
+  function telHref(tel) { return String(tel || '').replace(/[^\d+]/g, ''); }
+  // Solo cellulari italiani (3…, anche con +39/0039 davanti) → numero per wa.me; fissi → null
+  function waNumber(tel) {
+    let d = String(tel || '').replace(/[\s\-\/.()]/g, '');
+    if (d.startsWith('+39')) d = d.slice(3);
+    else if (d.startsWith('0039')) d = d.slice(4);
+    else if (/^393\d{8,9}$/.test(d)) d = d.slice(2);
+    return /^3\d{8,9}$/.test(d) ? '39' + d : null;
+  }
+
+  // ── Anagrafica clienti del negozio (public.clienti): SOLO LETTURA ──
+  // Mai scaricata tutta: solo ricerche su richiesta, al massimo 8 risultati
+  const ANA_FIELDS = 'id,nome_completo,localita,provincia,telefono,email';
+  async function searchAna(text) {
+    if (!sb || !user || !navigator.onLine) return [];
+    const words = normName(text).split(' ').filter(w => w.length >= 2).slice(0, 4);
+    if (!words.length) return [];
+    let qy = sb.from('clienti').select(ANA_FIELDS).is('deleted_at', null);
+    for (const w of words) qy = qy.ilike('search_text', `%${w}%`);
+    const { data, error } = await qy.order('nome_completo').limit(8);
+    return error ? [] : data;
+  }
+  async function getAna(id) {
+    if (!sb || !user || !navigator.onLine || !id) return null;
+    const { data, error } = await sb.from('clienti').select(ANA_FIELDS).eq('id', id).maybeSingle();
+    return error ? null : data;
+  }
+  function fromAna(r) {
+    return { nome: nice(r.nome_completo), localita: nice(r.localita), azienda: '', telefono: r.telefono || '', email: r.email || '', anagrafica_id: r.id };
+  }
+  function anaOpts(list, fn) {
+    if (!list.length) return '';
+    return `<div class="flbl" style="margin-top:12px">Dall'anagrafica negozio</div>` + list.map((r, i) =>
+      `<button class="opt" onclick="${fn}(${i})">🏪 ${esc(nice(r.nome_completo))}<small>${esc([nice(r.localita), r.telefono].filter(Boolean).join(' · ') || ' ')}</small></button>`
+    ).join('');
+  }
+  let anaTimer, anaSeq = 0;
+  function anaFill(text, elId, fn) {
+    clearTimeout(anaTimer);
+    const seq = ++anaSeq;
+    if (normName(text).length < 3) return;
+    anaTimer = setTimeout(async () => {
+      const res = await searchAna(text);
+      const el = document.getElementById(elId);
+      if (!el || seq !== anaSeq) return;   // nel frattempo la ricerca è cambiata
+      st.anaRes = res;
+      el.innerHTML = anaOpts(res, fn);
+    }, 350);
+  }
+
+  // ── Scelta del cliente (dentro la conferma del memo e nella modifica) ──
+  function cliField() {
+    return `<div class="fg"><label class="flbl">Cliente</label><div class="cpick" id="cpick"></div></div>`;
+  }
+  function optCli(c) {
+    return `<button class="opt" onclick="A.pickSet('${c.id}')">👤 ${esc(c.nome)}<small>${esc(cliSub(c) || ' ')}</small></button>`;
+  }
+  function pickName() {
+    const p = st.qCli || {};
+    return getCli(p.id)?.nome || p.nuovo?.nome || p.keepText || '';
+  }
+  // Al salvataggio: scheda scelta, oppure nuova scheda creata ora, oppure nessuna
+  function resolvePick() {
+    const p = st.qCli || {};
+    const c = getCli(p.id) || (p.nuovo && p.nuovo.nome ? ensureCli(p.nuovo) : null);
+    return c ? { id: c.id, nome: c.nome } : { id: null, nome: p.keepText || '' };
+  }
+
+  function renderCliPick() {
+    const el = document.getElementById('cpick');
+    if (!el) return;
+    const p = st.qCli || {}, ex = st.qEx || {};
+    const btn = (lbl) => `<button class="cal-btn" style="margin:0 0 0 auto" onclick="A.pickOpen()">${lbl}</button>`;
+    const said = (ex.cliente || '').trim();
+    const newOpt = said
+      ? `<button class="opt new" onclick="A.pickNew(false)">➕ Crea scheda «${esc(said)}»<small>${esc([ex.cliente_localita, ex.cliente_azienda].filter(Boolean).join(' · ') || ' ')}</small></button>` : '';
+    const other = `<button class="opt" onclick="A.pickOpen()">🔍 Un altro cliente…</button>`;
+    const none  = `<button class="opt" onclick="A.pickNone()">Senza cliente</button>`;
+
+    if (p.picking) {
+      el.innerHTML = pickerHtml(true);
+      pickSearch(st.pick.q);
+      return;
+    }
+    const c = getCli(p.id);
+    if (c) {
+      el.innerHTML = `<div class="cpick-cur"><span>👤 ${esc(c.nome)}<small class="cli-sub">${esc([cliSub(c), p.auto ? 'riconosciuto in automatico' : ''].filter(Boolean).join(' · '))}</small></span>${btn('Cambia')}</div>`;
+    } else if (p.nuovo) {
+      el.innerHTML = `<div class="cpick-cur"><span>➕ Nuova scheda: ${esc(p.nuovo.nome)}<small class="cli-sub">${esc(cliSub(p.nuovo))}</small></span>${btn('Cambia')}</div>`;
+    } else if (p.caso === 'simili') {
+      el.innerHTML = `<div class="flbl">Quale «${esc(said)}»?</div>` + p.list.map(x => optCli(x.c)).join('') + newOpt + other + none;
+    } else if (p.caso === 'nessuno') {
+      el.innerHTML = `<div style="font-size:15px">«${esc(said)}» non è tra i tuoi clienti</div>` + newOpt + `<div id="pick-ana"></div>` + other + none;
+      anaFill(said, 'pick-ana', 'A.pickAna');
+    } else {
+      el.innerHTML = `<div class="cpick-cur"><span>${p.keepText ? '«' + esc(p.keepText) + '» · senza scheda' : 'Senza cliente'}</span>${btn(p.keepText ? 'Collega' : 'Scegli')}</div>`;
+    }
+  }
+
+  function pickerHtml(inline) {
+    return `<input type="search" class="finp" id="pick-q" placeholder="🔍  Cerca tra i clienti…"
+              value="${esc(st.pick.q)}" oninput="A.pickSearch(this.value)">
+            <div id="pick-res"></div>
+            ${inline ? `<button class="opt" onclick="A.pickBack()">↩ Torna indietro</button>` : ''}`;
+  }
+  function pickSearch(qv) {
+    st.pick.q = qv;
+    const el = document.getElementById('pick-res');
+    if (!el) return;
+    const t = qv.trim();
+    el.innerHTML = findClienti(qv).slice(0, 8).map(optCli).join('')
+      + (t ? `<button class="opt new" onclick="A.pickNew(true)">➕ Nuovo cliente «${esc(t)}»</button>` : '')
+      + `<button class="opt" onclick="A.pickNone()">Senza cliente</button>`
+      + `<div id="pick-ana2"></div>`;
+    anaFill(qv, 'pick-ana2', 'A.pickAna');
+  }
+  function pickOpen() { st.qCli = { ...(st.qCli || {}), picking: true }; renderCliPick(); }
+  function pickBack() { st.qCli = { ...(st.qCli || {}), picking: false }; renderCliPick(); }
+  function pickDone(choice) {
+    if (st.pick.ctx === 'move') { applyMove(choice); return; }
+    st.qCli = choice.none ? { id: null, keepText: '' } : choice;
+    renderCliPick();
+  }
+  function pickSet(id) { pickDone({ id }); }
+  function pickNone() { pickDone({ none: true }); }
+  function pickNew(fromQuery) {
+    const ex = st.qEx || {};
+    const nome = (fromQuery ? st.pick.q : ex.cliente || '').trim();
+    if (!nome) return;
+    pickDone({ nuovo: fromQuery ? { nome } : { nome, localita: ex.cliente_localita || '', azienda: ex.cliente_azienda || '' } });
+  }
+  function pickAna(i) {
+    const r = st.anaRes[i];
+    if (!r) return;
+    const ex = db.clienti.find(c => c.anagrafica_id === r.id);
+    pickDone(ex ? { id: ex.id } : { nuovo: fromAna(r) });
+  }
+
+  // ── Sposta un elemento su un altro cliente ────────────────────
+  function moveItem(id, tipo) {
+    tipo = tipoOf(tipo);
+    const it = findItem(tipo, id);
+    if (!it) return;
+    const cur = getCli(it.cliente_id);
+    st.pick = { ctx: 'move', tipo, id, q: cur ? '' : (it.cliente || '') };
+    st.qEx = { cliente: it.cliente || '' };
+    openModal(`
+      <div class="sheet-title">👤 Cliente di questo elemento</div>
+      <div class="hint" style="margin:-6px 0 12px">Ora: ${cur ? esc(cur.nome) : it.cliente ? '«' + esc(it.cliente) + '» (senza scheda)' : 'senza cliente'}</div>
+      ${pickerHtml(false)}
+      <div class="btn-row"><button class="btn btn-sec" onclick="A.closeModal()">Annulla</button></div>`);
+    pickSearch(st.pick.q);
+  }
+  function applyMove(choice) {
+    const { tipo, id } = st.pick;
+    st.pick = { ctx: 'inline', q: '' };
+    const it = findItem(tipo, id);
+    closeModal();
+    if (!it) return;
+    const c = choice.id ? getCli(choice.id) : choice.nuovo ? ensureCli(choice.nuovo) : null;
+    it.cliente_id = c ? c.id : null;
+    it.cliente    = c ? c.nome : '';
+    enqueue('up', tipo, id);
+    rerender();
+    toast(c ? '👤 Collegato a ' + c.nome : 'Ora è senza cliente');
+  }
+
+  // ── Elenco clienti ────────────────────────────────────────────
+  function renderClienti() {
+    const el = document.getElementById('cli-list');
+    const list = findClienti(document.getElementById('cli-search').value);
+    if (!list.length) {
+      el.innerHTML = `<div class="empty"><div class="empty-ico">👤</div><div class="empty-txt">${db.clienti.length ? 'Nessun cliente trovato' : 'Nessuna scheda cliente.<br>Creane una con <strong>➕ Nuovo cliente</strong><br>o registra un memo nominando il cliente.'}</div></div>`;
+      return;
+    }
+    el.innerHTML = list.map(c => {
+      const n = itemsOf(c.id).length, last = lastActivity(c);
+      const info = n ? `${n} ${n > 1 ? 'elementi' : 'elemento'} · ultimo ${fmtDate(last.split('T')[0])}` : 'nessun elemento';
+      return `<div class="cli-row" onclick="A.openCli('${c.id}')">
+        <div class="cavatar">${esc(initials(c.nome))}</div>
+        <div style="flex:1;min-width:0">
+          <div class="cname">${esc(c.nome)}</div>
+          ${cliSub(c) ? `<div class="cli-sub">${esc(cliSub(c))}</div>` : ''}
+          <div class="cli-sub">${info}</div>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  function openCli(id) { st.cli = id; go('cliente'); }
+
+  // ── Scheda cliente ────────────────────────────────────────────
+  function localToday() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  }
+  function renderScheda() {
+    const el = document.getElementById('cli-scheda');
+    const c = getCli(st.cli);
+    if (!c) { el.innerHTML = ''; go('clienti'); return; }
+
+    const wa = waNumber(c.telefono);
+    const acts = [
+      c.telefono ? `<a href="tel:${esc(telHref(c.telefono))}">📞 Chiama</a>` : '',
+      wa ? `<a class="wa" href="https://wa.me/${wa}" target="_blank" rel="noopener">💬 WhatsApp</a>` : '',
+      c.email ? `<a href="mailto:${esc(c.email.trim())}">✉️ Mail</a>` : '',
+    ].filter(Boolean).join('');
+    const lines = [
+      c.telefono ? `📞 <a href="tel:${esc(telHref(c.telefono))}">${esc(c.telefono)}</a>` : '',
+      c.email ? `✉️ <a href="mailto:${esc(c.email.trim())}">${esc(c.email)}</a>` : '',
+    ].filter(Boolean).join('<br>');
+    const sub = [c.localita ? '📍 ' + c.localita : '', c.azienda ? '🏢 ' + c.azienda : ''].filter(Boolean).join(' · ');
+
+    // In cima gli appuntamenti futuri (dal più vicino), poi tutto il resto dal più recente
+    const today = localToday();
+    const items = itemsOf(c.id);
+    const fut = items.filter(x => x.tipo === 'appuntamento' && x.data >= today)
+      .sort((a, b) => (a.data + (a.ora || '')).localeCompare(b.data + (b.ora || '')));
+    const key = x => x.tipo === 'appuntamento' && x.data ? x.data + 'T' + (x.ora || '00:00') : (x.creato || '');
+    const rest = items.filter(x => !fut.includes(x)).sort((a, b) => key(b).localeCompare(key(a)));
+
+    el.innerHTML = `
+      <div class="back-row">
+        <button class="back-btn" onclick="A.go('clienti')">← Clienti</button>
+        <button class="icobtn" onclick="A.editCli('${c.id}')" title="Modifica">✏️</button>
+      </div>
+      <div class="cli-head">
+        <div class="cli-top">
+          <div class="cavatar" style="width:52px;height:52px;font-size:19px">${esc(initials(c.nome))}</div>
+          <div style="min-width:0">
+            <div class="cli-name">${esc(c.nome)}</div>
+            ${sub ? `<div class="cli-sub">${esc(sub)}</div>` : ''}
+          </div>
+        </div>
+        ${lines ? `<div class="cli-line">${lines}</div>` : ''}
+        ${acts ? `<div class="cli-acts">${acts}</div>` : '<div style="height:10px"></div>'}
+        ${c.anagrafica_id ? `<div class="hint" style="margin-bottom:10px">🔗 Collegato all'anagrafica negozio</div>` : ''}
+        <button class="btn btn-pr" onclick="A.recFor('${c.id}')">🎙️  Registra per questo cliente</button>
+      </div>
+      ${fut.length ? `<div class="sec-lbl">Prossimi (${fut.length})</div>${fut.map(it => renderCard(it)).join('')}` : ''}
+      <div class="sec-lbl">Storico (${rest.length})</div>
+      ${rest.length ? rest.map(it => renderCard(it)).join('') : `<div class="empty" style="padding:24px"><div class="empty-txt">Ancora niente per questo cliente</div></div>`}`;
+  }
+
+  // ── Nuova / modifica scheda ───────────────────────────────────
+  function editCli(id) {
+    const c = getCli(id) || { nome: '', localita: '', azienda: '', telefono: '', email: '' };
+    st.editAna = c.anagrafica_id || null;
+    const n = id ? itemsOf(id).length : 0;
+    openModal(`
+      <div class="sheet-title">${id ? '✏️ Modifica cliente' : '➕ Nuovo cliente'}</div>
+      <div class="fg"><label class="flbl">Nome</label>
+        <input type="text" class="finp" id="c-nome" value="${esc(c.nome)}"></div>
+      <div class="row">
+        <div class="fg"><label class="flbl">Paese / Località</label>
+          <input type="text" class="finp" id="c-loc" value="${esc(c.localita)}"></div>
+        <div class="fg"><label class="flbl">Azienda</label>
+          <input type="text" class="finp" id="c-az" value="${esc(c.azienda)}"></div>
+      </div>
+      <div class="fg"><label class="flbl">Telefono</label>
+        <input type="tel" class="finp" id="c-tel" value="${esc(c.telefono)}"></div>
+      <div class="fg"><label class="flbl">Email</label>
+        <input type="email" class="finp" id="c-mail" value="${esc(c.email)}"></div>
+      <div class="fg"><label class="flbl">Anagrafica negozio</label>
+        <div id="c-ana-st"></div>
+        <input type="search" class="finp" id="c-ana-q" style="margin-top:8px"
+               placeholder="🔍  Cerca nell'anagrafica del negozio…" oninput="A.anaSearch(this.value)">
+        <div id="c-ana-res"></div>
+        <div class="hint">Serve la connessione. MAYDAY legge soltanto: l'anagrafica non viene mai modificata.</div>
+      </div>
+      ${id ? `<button class="btn" style="background:rgba(255,140,0,.15);color:var(--red);width:100%;margin-top:4px" onclick="A.delCli('${id}')">🗑️  Elimina scheda</button>` : ''}
+      <div class="btn-row">
+        <button class="btn btn-sec" onclick="A.closeModal()">Annulla</button>
+        <button class="btn btn-pr" onclick="A.saveCli('${id || ''}')">Salva</button>
+      </div>`);
+    renderAnaStatus();
+  }
+
+  function renderAnaStatus() {
+    const el = document.getElementById('c-ana-st');
+    if (!el) return;
+    el.innerHTML = st.editAna
+      ? `<div class="cpick-cur" style="font-size:15px"><span>🔗 Collegato</span>
+           <button class="cal-btn" style="margin:0 0 0 auto" onclick="A.anaRefresh()">↻ Aggiorna dati</button>
+           <button class="cal-btn" style="margin:0" onclick="A.anaUnlink()">Scollega</button></div>`
+      : `<div class="cli-sub">Non collegato</div>`;
+  }
+  function anaSearch(qv) { anaFill(qv, 'c-ana-res', 'A.anaPick'); }
+  // Collega e completa solo i campi ancora vuoti
+  function anaPick(i) {
+    const r = st.anaRes[i];
+    if (!r) return;
+    st.editAna = r.id;
+    const d = fromAna(r);
+    [['c-nome', d.nome], ['c-loc', d.localita], ['c-tel', d.telefono], ['c-mail', d.email]].forEach(([f, v]) => {
+      const inp = document.getElementById(f);
+      if (inp && !inp.value.trim() && v) inp.value = v;
+    });
+    document.getElementById('c-ana-res').innerHTML = '';
+    document.getElementById('c-ana-q').value = '';
+    renderAnaStatus();
+    toast('🔗 Collegato: completati i campi vuoti');
+  }
+  // Sovrascrive nome, località, telefono ed email con i dati attuali dell'anagrafica
+  async function anaRefresh() {
+    const r = await getAna(st.editAna);
+    if (!r) { toast('⚠️ Anagrafica non raggiungibile (sei offline?)'); return; }
+    const d = fromAna(r);
+    [['c-nome', d.nome], ['c-loc', d.localita], ['c-tel', d.telefono], ['c-mail', d.email]].forEach(([f, v]) => {
+      const inp = document.getElementById(f);
+      if (inp && v) inp.value = v;
+    });
+    toast('↻ Dati aggiornati: tocca Salva per confermare');
+  }
+  function anaUnlink() { st.editAna = null; renderAnaStatus(); }
+
+  function saveCli(id) {
+    const data = {
+      nome: q('c-nome').trim(), localita: q('c-loc').trim(), azienda: q('c-az').trim(),
+      telefono: q('c-tel').trim(), email: q('c-mail').trim(), anagrafica_id: st.editAna,
+    };
+    if (!data.nome) { toast('⚠️ Scrivi almeno il nome'); return; }
+    let c = getCli(id);
+    if (c) {
+      Object.assign(c, data);
+      if (!c.anagrafica_id) delete c.anagrafica_id;
+      enqueue('up', 'cliente', c.id);
+      // Il nome copiato negli elementi resta allineato (serve alla ricerca nelle Note)
+      for (const it of itemsOf(c.id)) if (it.cliente !== c.nome) { it.cliente = c.nome; enqueue('up', it.tipo, it.id); }
+    } else {
+      c = createCli(data);
+    }
+    closeModal();
+    toast('✅ Scheda salvata');
+    if (st.view === 'cliente' || !id) openCli(c.id); else rerender();
+  }
+
+  function delCli(id) {
+    const c = getCli(id);
+    if (!c) return;
+    const n = itemsOf(id).length;
+    openModal(`
+      <div class="sheet-title">🗑️ Eliminare la scheda?</div>
+      <p style="line-height:1.5;font-size:16px;margin-bottom:6px">Scheda di <strong>${esc(c.nome)}</strong>.</p>
+      <div class="hint">${n ? `Le sue ${n} note, task e appuntamenti <strong>non vengono cancellati</strong>: restano senza scheda.` : 'Non ha elementi collegati.'}</div>
+      <div class="btn-row">
+        <button class="btn btn-sec" onclick="A.editCli('${id}')">Annulla</button>
+        <button class="btn" style="background:var(--red);color:#fff;flex:1" onclick="A.confirmDelCli('${id}')">Elimina</button>
+      </div>`);
+  }
+  function confirmDelCli(id) {
+    for (const it of itemsOf(id)) { it.cliente_id = null; enqueue('up', it.tipo, it.id); }
+    db.clienti = db.clienti.filter(c => c.id !== id);
+    enqueue('del', 'cliente', id);
+    closeModal();
+    go('clienti');
+    toast('🗑️ Scheda eliminata');
+  }
+
+  // ── Prima volta: schede dai nomi già presenti negli appunti ───
+  let sgGroups = [];
+  function schedeGroups() {
+    const map = new Map();
+    for (const it of [...db.appointments, ...db.tasks, ...db.notes]) {
+      if (getCli(it.cliente_id)) continue;
+      const key = normName(it.cliente);
+      if (!key) continue;
+      if (!map.has(key)) map.set(key, { key, nome: it.cliente.trim(), n: 0 });
+      map.get(key).n++;
+    }
+    return [...map.values()].sort((a, b) => a.nome.localeCompare(b.nome));
+  }
+  function maybeAskSchede() {
+    if (localStorage.getItem('md_schede_v21') || st.schedeAsked) return;
+    if (user && localStorage.getItem('md_migrated') !== user.id) return;
+    if (st.rec || st.busy || document.getElementById('overlay').classList.contains('on')) return;
+    sgGroups = schedeGroups();
+    if (!sgGroups.length) { localStorage.setItem('md_schede_v21', '1'); return; }
+    st.schedeAsked = true;
+    // Segnala i nomi che sembrano la stessa persona ("Rossi" e "Mario Rossi")
+    const similar = g => sgGroups.find(o => o !== g && (
+      g.key.split(' ').every(t => o.key.split(' ').includes(t)) ||
+      o.key.split(' ').every(t => g.key.split(' ').includes(t)) ||
+      quasiUguali(g.key, o.key)));
+    openModal(`
+      <div class="sheet-title">👤 Crea le schede clienti</div>
+      <div class="hint" style="margin:-6px 0 6px">Ho trovato ${sgGroups.length} nomi nei tuoi appunti.
+        Togli la spunta per escludere un nome, correggilo se serve, oppure uniscilo a un altro.</div>
+      ${sgGroups.map((g, i) => {
+        const sim = similar(g);
+        return `<div class="sg-row">
+          <div class="sg-top">
+            <input type="checkbox" id="sg-on-${i}" checked>
+            <input type="text" class="finp" id="sg-nome-${i}" value="${esc(g.nome)}">
+            <span class="cli-sub" style="white-space:nowrap">${g.n} el.</span>
+          </div>
+          <select class="finp" id="sg-merge-${i}">
+            <option value="">Scheda propria</option>
+            ${sgGroups.map((o, j) => j === i ? '' : `<option value="${j}">Unisci con «${esc(o.nome)}»</option>`).join('')}
+          </select>
+          ${sim ? `<div class="hint">⚠️ Simile a «${esc(sim.nome)}»</div>` : ''}
+        </div>`;
+      }).join('')}
+      <div class="btn-row">
+        <button class="btn btn-sec" onclick="A.closeModal()">Non ora</button>
+        <button class="btn btn-ok" onclick="A.createSchede()">✓ Crea schede</button>
+      </div>
+      <button class="btn" style="background:none;color:var(--dim);width:100%;margin-top:8px;font-size:14px" onclick="A.skipSchede()">Non chiedermelo più</button>`);
+  }
+  function skipSchede() { localStorage.setItem('md_schede_v21', '1'); closeModal(); }
+
+  function createSchede() {
+    const n = sgGroups.length;
+    const on = i => document.getElementById('sg-on-' + i)?.checked;
+    const mergeOf = i => { const v = document.getElementById('sg-merge-' + i)?.value; return v === '' || v == null ? null : +v; };
+    // Segue le unioni fino al nome "capofila" (senza girare in tondo)
+    const target = i => {
+      const seen = new Set([i]);
+      let t = i;
+      while (mergeOf(t) !== null && !seen.has(mergeOf(t))) { t = mergeOf(t); seen.add(t); }
+      return t;
+    };
+    const schede = new Map();   // capofila → scheda
+    let created = 0, linked = 0;
+    for (let i = 0; i < n; i++) {
+      if (!on(i)) continue;
+      const t = target(i);
+      if (!on(t)) continue;      // unito a un nome escluso: escluso anch'esso
+      let c = schede.get(t);
+      if (!c) {
+        const nome = (document.getElementById('sg-nome-' + t)?.value || sgGroups[t].nome).trim();
+        if (!nome) continue;
+        c = db.clienti.find(x => normName(x.nome) === normName(nome));
+        if (!c) { c = createCli({ nome }); created++; }
+        schede.set(t, c);
+      }
+      for (const it of [...db.appointments, ...db.tasks, ...db.notes]) {
+        if (getCli(it.cliente_id) || normName(it.cliente) !== sgGroups[i].key) continue;
+        it.cliente_id = c.id; it.cliente = c.nome;
+        enqueue('up', it.tipo, it.id);
+        linked++;
+      }
+    }
+    localStorage.setItem('md_schede_v21', '1');
+    closeModal();
+    rerender();
+    toast(`✅ Create ${created} schede · collegati ${linked} elementi`, 4000);
+  }
 
   // ── Render ────────────────────────────────────────────────────
   function renderRecent() {
@@ -1729,6 +2396,11 @@ Regole:
       ? `<button class="cal-btn" onclick="A.addToCal('${item.id}')">📅 Aggiungi a Calendar</button>`
       : '';
     const calMark = isApt && calOk(item) ? `<span class="cal-ok">✓ In Calendar</span>` : '';
+    // Nome cliente: toccabile se c'è la scheda (nella scheda stessa non serve ripeterlo)
+    const cl = getCli(item.cliente_id);
+    const cliHtml = st.view === 'cliente' && cl ? ''
+      : cl ? `<div class="card-cli link" onclick="A.openCli('${cl.id}')">👤 ${esc(cl.nome)}</div>`
+      : item.cliente ? `<div class="card-cli">${esc(item.cliente)}</div>` : '';
 
     return `<div class="card${item.completato?' done':''}" id="card-${item.id}">
       <div class="card-hd">
@@ -1736,12 +2408,13 @@ Regole:
         ${pdot}
         ${calMark}
       </div>
-      ${item.cliente?`<div class="card-cli">${esc(item.cliente)}</div>`:''}
+      ${cliHtml}
       ${meta?`<div class="card-meta">${meta}</div>`:''}
       ${item.descrizione?`<div class="card-desc">${esc(item.descrizione)}</div>`:''}
       <div class="card-acts">
         ${calBtn}
         ${taskBtn}
+        <button class="icobtn" onclick="A.moveItem('${item.id}','${tipo}')" title="Cliente">👤</button>
         <button class="icobtn" onclick="A.editItem('${item.id}','${tipo}')" title="Modifica">✏️</button>
         <button class="icobtn del" onclick="A.delItem('${item.id}','${tipo}')" title="Elimina">🗑️</button>
       </div>
@@ -1783,6 +2456,8 @@ Regole:
     if (st.view==='agenda') renderAppts(st.fA);
     if (st.view==='task')   renderTasks(st.fT);
     if (st.view==='note')   renderNotes(document.getElementById('note-search').value);
+    if (st.view==='clienti') renderClienti();
+    if (st.view==='cliente') renderScheda();
   }
 
   function editItem(id, tipo) {
@@ -1791,12 +2466,14 @@ Regole:
     else if (tipo==='task')    item=db.tasks.find(x=>x.id===id);
     else                       item=db.notes.find(x=>x.id===id);
     if (!item) return;
+    st.qEx = { cliente: item.cliente || '' };
+    st.pick = { ctx: 'inline', q: '' };
+    st.qCli = getCli(item.cliente_id) ? { id: item.cliente_id } : { id: null, keepText: item.cliente || '' };
 
     let fields='';
     if (tipo==='appuntamento') {
       fields=`
-        <div class="fg"><label class="flbl">Cliente</label>
-          <input type="text" class="finp" id="e-cli" value="${esc(item.cliente||'')}"></div>
+        ${cliField()}
         <div class="row">
           <div class="fg"><label class="flbl">Data</label>
             <input type="date" class="finp" id="e-data" value="${item.data||''}"></div>
@@ -1811,8 +2488,7 @@ Regole:
         <div class="hint cal-ok" id="e-calst">${calStatus(item)}</div>`;
     } else if (tipo==='task') {
       fields=`
-        <div class="fg"><label class="flbl">Cliente / Riguardo</label>
-          <input type="text" class="finp" id="e-cli" value="${esc(item.cliente||'')}"></div>
+        ${cliField()}
         <div class="fg"><label class="flbl">Cosa fare</label>
           <textarea class="finp" id="e-desc">${esc(item.descrizione||'')}</textarea></div>
         <div class="row">
@@ -1827,8 +2503,7 @@ Regole:
         </div>`;
     } else {
       fields=`
-        <div class="fg"><label class="flbl">Cliente</label>
-          <input type="text" class="finp" id="e-cli" value="${esc(item.cliente||'')}"></div>
+        ${cliField()}
         <div class="fg"><label class="flbl">Nota</label>
           <textarea class="finp" id="e-desc" style="min-height:90px">${esc(item.descrizione||'')}</textarea></div>`;
     }
@@ -1840,18 +2515,20 @@ Regole:
         <button class="btn btn-sec" onclick="A.closeModal()">Annulla</button>
         <button class="btn btn-pr"  onclick="A.saveEdit('${id}','${tipo}')">Salva</button>
       </div>`);
+    renderCliPick();
   }
 
   function saveEdit(id, tipo) {
+    const cl = resolvePick();
     if (tipo==='appuntamento') {
       const it=db.appointments.find(x=>x.id===id);
-      if(it){ it.cliente=q('e-cli');it.data=q('e-data');it.ora=q('e-ora');it.luogo=q('e-luogo');it.descrizione=q('e-desc'); }
+      if(it){ it.cliente=cl.nome;it.cliente_id=cl.id;it.data=q('e-data');it.ora=q('e-ora');it.luogo=q('e-luogo');it.descrizione=q('e-desc'); }
     } else if (tipo==='task') {
       const it=db.tasks.find(x=>x.id===id);
-      if(it){ it.cliente=q('e-cli');it.descrizione=q('e-desc');it.scadenza=q('e-scad');it.priorita=q('e-pri')||'media'; }
+      if(it){ it.cliente=cl.nome;it.cliente_id=cl.id;it.descrizione=q('e-desc');it.scadenza=q('e-scad');it.priorita=q('e-pri')||'media'; }
     } else {
       const it=db.notes.find(x=>x.id===id);
-      if(it){ it.cliente=q('e-cli');it.descrizione=q('e-desc'); }
+      if(it){ it.cliente=cl.nome;it.cliente_id=cl.id;it.descrizione=q('e-desc'); }
     }
     enqueue('up', tipo, id); closeModal(); rerender(); toast('✅ Modificato!');
   }
@@ -1911,7 +2588,7 @@ Regole:
     if (!it) return;
     // Dalla scheda di modifica usa i valori scritti nei campi, anche se non ancora salvati
     const a = fromEdit
-      ? { ...it, cliente:q('e-cli'), data:q('e-data'), ora:q('e-ora'), luogo:q('e-luogo'), descrizione:q('e-desc') }
+      ? { ...it, cliente:pickName(), data:q('e-data'), ora:q('e-ora'), luogo:q('e-luogo'), descrizione:q('e-desc') }
       : it;
     if (!/^\d{4}-\d{2}-\d{2}$/.test(a.data||'')) { toast('⚠️ Aggiungi prima la data all\'appuntamento'); return; }
 
@@ -1952,7 +2629,8 @@ Regole:
   // Tocco fuori dalla scheda: se era una dettatura, l'audio resta tra quelle da elaborare
   function dismissModal() {
     closeModal();
-    st.qRec = null; st.queue = []; st.qIdx = 0; st.qSaved = 0;
+    st.qRec = null; st.qFixed = null; st.queue = []; st.qIdx = 0; st.qSaved = 0;
+    st.pick = { ctx: 'inline', q: '' };
     renderPending();
   }
 
@@ -1976,7 +2654,7 @@ Regole:
       fromServer = await sync();
     }
     const out = {
-      appointments: db.appointments, tasks: db.tasks, notes: db.notes,
+      clienti: db.clienti, appointments: db.appointments, tasks: db.tasks, notes: db.notes,
       exported: new Date().toISOString(),
       fonte: fromServer ? 'supabase' : 'telefono',
     };
@@ -2020,7 +2698,8 @@ Regole:
     openModal(`
       <div class="sheet-title">⚠️ Cancella tutti i dati</div>
       <p style="color:var(--dim);margin-bottom:18px;line-height:1.5;font-size:14px">
-        Verranno eliminati tutti gli appuntamenti, task e note, sul telefono e su Supabase. L'azione non è reversibile.
+        Verranno eliminati appuntamenti, task, note e schede clienti di MAYDAY, sul telefono e su Supabase.
+        L'anagrafica clienti del negozio non viene toccata. L'azione non è reversibile.
       </p>
       <div class="btn-row">
         <button class="btn btn-sec" onclick="A.closeModal()">Annulla</button>
@@ -2034,7 +2713,7 @@ Regole:
         outbox.push({ op: 'del', tipo, id: it.id });
       }
     }
-    db={appointments:[],tasks:[],notes:[]}; save(); saveOutbox(); sync();
+    db={clienti:[],appointments:[],tasks:[],notes:[]}; save(); saveOutbox(); sync();
     closeModal(); rerender(); toast('🗑️ Dati eliminati');
   }
 
@@ -2073,6 +2752,7 @@ Regole:
     renderRecent();
     renderPending();
     initAuth();
+    setTimeout(maybeAskSchede, 2500);
     window.addEventListener('online', () => { sync(); renderPending(); });
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') sync(); });
     if ('serviceWorker' in navigator)
@@ -2092,6 +2772,10 @@ Regole:
     clearAll, confirmClearAll,
     gAuth,
     sendLink, logout, syncNow, migrate, processPending,
+    recFor, renderClienti, openCli, editCli, saveCli, delCli, confirmDelCli,
+    moveItem, pickOpen, pickBack, pickSearch, pickSet, pickNew, pickNone, pickAna,
+    anaSearch, anaPick, anaRefresh, anaUnlink,
+    createSchede, skipSchede,
     init,
   };
 })();
