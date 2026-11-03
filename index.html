@@ -665,9 +665,13 @@
       <input type="search" class="finp" id="cli-search"
              placeholder="🔍  Cerca nome, paese, telefono…"
              oninput="A.renderClienti()">
+      <div class="hint">Da 3 lettere cerca anche nell'anagrafica del negozio.</div>
       <button class="btn btn-pr" style="margin-top:9px" onclick="A.editCli('')">➕  Nuovo cliente</button>
+      <div id="cli-link"></div>
     </div>
     <div id="cli-list" style="margin-top:12px"></div>
+    <div id="cli-ana" style="padding:0 12px"></div>
+    <div id="cli-goo" style="padding:0 12px"></div>
   </section>
 
   <!-- SCHEDA CLIENTE -->
@@ -771,7 +775,7 @@
     </div>
 
     <div style="padding:16px;color:var(--dim);font-size:11px;text-align:center">
-      MAYDAY v2.1.1 · Uso personale · Dati su Supabase, copia offline sul telefono
+      MAYDAY v2.2 · Uso personale · Dati su Supabase, copia offline sul telefono
     </div>
   </section>
 
@@ -932,6 +936,7 @@ const A = (() => {
       nome: it.nome || '', localita: it.localita || '', azienda: it.azienda || '',
       telefono: it.telefono || '', email: it.email || '',
       anagrafica_id: isUuid(it.anagrafica_id) ? it.anagrafica_id : null,
+      anagrafica_dati: isUuid(it.anagrafica_id) ? it.anagrafica_dati || null : null,
       creato: isoTs(it.creato), aggiornato: isoTs(it.aggiornato || it.creato),
     };
     const r = {
@@ -957,6 +962,7 @@ const A = (() => {
       const c = { id: r.id, tipo, nome: r.nome || '', localita: r.localita || '', azienda: r.azienda || '',
                   telefono: r.telefono || '', email: r.email || '', creato: isoTs(r.creato), aggiornato: isoTs(r.aggiornato) };
       if (r.anagrafica_id) c.anagrafica_id = r.anagrafica_id;
+      if (r.anagrafica_dati) c.anagrafica_dati = r.anagrafica_dati;
       return c;
     }
     const it = { id: r.id, tipo, cliente: r.cliente || '', descrizione: r.descrizione || '',
@@ -978,7 +984,7 @@ const A = (() => {
     syncP = (async () => {
       let ok;
       do { syncAgain = false; ok = await doSync(); } while (syncAgain && ok);
-      if (ok) setTimeout(maybeAskSchede, 300);
+      if (ok) { setTimeout(maybeAskSchede, 300); setTimeout(refreshFromAna, 1500); }
       return ok;
     })().finally(() => { syncP = null; updateAccountUI(); });
     return syncP;
@@ -1844,7 +1850,7 @@ Regole:
       telefono: data.telefono || '', email: data.email || '',
       creato: new Date().toISOString(),
     };
-    if (data.anagrafica_id) c.anagrafica_id = data.anagrafica_id;
+    if (data.anagrafica_id) { c.anagrafica_id = data.anagrafica_id; c.anagrafica_dati = data.anagrafica_dati || null; }
     db.clienti.push(c);
     enqueue('up', 'cliente', c.id);
     return c;
@@ -1882,8 +1888,10 @@ Regole:
     const { data, error } = await sb.from('clienti').select(ANA_FIELDS).eq('id', id).maybeSingle();
     return error ? null : data;
   }
+  // Dati del negozio che MAYDAY copia (e poi tiene aggiornati) nella scheda
+  function anaDati(r) { return { telefono: (r.telefono || '').trim(), email: (r.email || '').trim(), localita: nice(r.localita) }; }
   function fromAna(r) {
-    return { nome: nice(r.nome_completo), localita: nice(r.localita), azienda: '', telefono: r.telefono || '', email: r.email || '', anagrafica_id: r.id };
+    return { nome: nice(r.nome_completo), azienda: '', ...anaDati(r), anagrafica_id: r.id, anagrafica_dati: anaDati(r) };
   }
   function anaOpts(list, fn) {
     if (!list.length) return '';
@@ -2025,9 +2033,18 @@ Regole:
   // ── Elenco clienti ────────────────────────────────────────────
   function renderClienti() {
     const el = document.getElementById('cli-list');
-    const list = findClienti(document.getElementById('cli-search').value);
+    const qv = document.getElementById('cli-search').value;
+    const list = findClienti(qv);
+    renderLinkBtn();
+    // Oltre alle tue schede: anagrafica negozio e Google Contacts (da 3 lettere)
+    document.getElementById('cli-ana').innerHTML = '';
+    document.getElementById('cli-goo').innerHTML = '';
+    anaFill(qv, 'cli-ana', 'A.anaOpen');
+    gooFill(qv);
     if (!list.length) {
-      el.innerHTML = `<div class="empty"><div class="empty-ico">👤</div><div class="empty-txt">${db.clienti.length ? 'Nessun cliente trovato' : 'Nessuna scheda cliente.<br>Creane una con <strong>➕ Nuovo cliente</strong><br>o registra un memo nominando il cliente.'}</div></div>`;
+      el.innerHTML = qv.trim()
+        ? `<div class="hint" style="padding:0 16px">Nessuna tua scheda con «${esc(qv.trim())}»${normName(qv).length >= 3 ? '' : ': scrivi almeno 3 lettere per cercare nel negozio'}</div>`
+        : `<div class="empty"><div class="empty-ico">👤</div><div class="empty-txt">${db.clienti.length ? 'Nessun cliente trovato' : 'Nessuna scheda cliente.<br>Creane una con <strong>➕ Nuovo cliente</strong><br>o registra un memo nominando il cliente.'}</div></div>`;
       return;
     }
     el.innerHTML = list.map(c => {
@@ -2045,6 +2062,129 @@ Regole:
   }
 
   function openCli(id) { st.cli = id; go('cliente'); }
+
+  // Tocco su un cliente del negozio: apre la sua scheda MAYDAY (creata e collegata ora se non c'è)
+  function anaOpen(i) {
+    const r = st.anaRes[i];
+    if (!r) return;
+    const c = db.clienti.find(x => x.anagrafica_id === r.id) || createCli(fromAna(r));
+    document.getElementById('cli-search').value = '';
+    openCli(c.id);
+  }
+
+  // Google Contacts nella ricerca (solo se collegato in ⚙️)
+  let gooTimer, gooSeq = 0, gooRes = [];
+  function gooFill(qv) {
+    clearTimeout(gooTimer);
+    const seq = ++gooSeq;
+    if (!cfg.googleToken || normName(qv).length < 3) return;
+    gooTimer = setTimeout(async () => {
+      const res = await searchContacts(qv.trim());
+      const el = document.getElementById('cli-goo');
+      if (!el || seq !== gooSeq) return;
+      gooRes = res;
+      el.innerHTML = res.length ? `<div class="flbl" style="margin-top:12px">Da Google Contacts</div>` + res.map((c, i) =>
+        `<button class="opt" onclick="A.gooOpen(${i})">📇 ${esc(c.name)}<small>${esc(c.phone || c.email || ' ')}</small></button>`).join('') : '';
+    }, 350);
+  }
+  function gooOpen(i) {
+    const g = gooRes[i];
+    if (!g) return;
+    const c = db.clienti.find(x => normName(x.nome) === normName(g.name)) || createCli({ nome: g.name, telefono: g.phone, email: g.email });
+    document.getElementById('cli-search').value = '';
+    openCli(c.id);
+  }
+
+  // ── Collega all'anagrafica le schede che non lo sono ──────────
+  function renderLinkBtn() {
+    const el = document.getElementById('cli-link');
+    const n = db.clienti.filter(c => !c.anagrafica_id).length;
+    el.innerHTML = n && sb && user
+      ? `<button class="btn btn-sec" style="margin-top:9px" onclick="A.linkAll()">🔗  Collega all'anagrafica negozio (${n})</button>` : '';
+  }
+  let linkRows = [];
+  async function linkAll() {
+    if (!navigator.onLine) { toast('📵 Serve la connessione'); return; }
+    const todo = db.clienti.filter(c => !c.anagrafica_id).slice(0, 40);
+    openModal(`<div class="sheet-title">🔗 Collega all'anagrafica</div><div class="hint">Cerco ${todo.length} schede nell'anagrafica del negozio…</div>`);
+    linkRows = [];
+    for (const c of todo) {
+      // prima i risultati con lo stesso paese della scheda
+      const same = a => normName(nice(a.localita)) === normName(c.localita) ? 1 : 0;
+      const res = (await searchAna(c.nome)).sort((a, b) => same(b) - same(a));
+      linkRows.push({ c, res: res.slice(0, 5) });
+    }
+    const found = linkRows.filter(r => r.res.length);
+    openModal(`
+      <div class="sheet-title">🔗 Collega all'anagrafica</div>
+      <div class="hint" style="margin:-6px 0 6px">Scegli il cliente giusto per ogni scheda, oppure «Non collegare».
+        Verranno copiati telefono, email e paese, solo dove nella scheda sono vuoti.</div>
+      ${linkRows.map((r, i) => `<div class="sg-row">
+        <div style="font-weight:800;font-size:16px">👤 ${esc(r.c.nome)}<span class="cli-sub"> ${esc(cliSub(r.c))}</span></div>
+        ${r.res.length ? `<select class="finp" id="lk-${i}" style="margin-top:6px">
+          <option value="">Non collegare</option>
+          ${r.res.map((a, j) => `<option value="${j}" ${r.res.length === 1 ? 'selected' : ''}>${esc([nice(a.nome_completo), nice(a.localita), a.telefono].filter(Boolean).join(' · '))}</option>`).join('')}
+        </select>` : `<div class="cli-sub">Nessun cliente trovato in anagrafica</div>`}
+      </div>`).join('')}
+      <div class="btn-row">
+        <button class="btn btn-sec" onclick="A.closeModal()">Annulla</button>
+        ${found.length ? `<button class="btn btn-ok" onclick="A.linkConfirm()">✓ Collega</button>` : ''}
+      </div>`);
+  }
+  function linkConfirm() {
+    let n = 0;
+    linkRows.forEach((r, i) => {
+      const v = document.getElementById('lk-' + i)?.value;
+      const a = v === '' || v == null ? null : r.res[+v];
+      if (!a || !getCli(r.c.id)) return;
+      const d = anaDati(a);
+      r.c.anagrafica_id = a.id;
+      r.c.anagrafica_dati = d;
+      for (const f of ['telefono', 'email', 'localita']) if (!(r.c[f] || '').trim() && d[f]) r.c[f] = d[f];
+      enqueue('up', 'cliente', r.c.id);
+      n++;
+    });
+    closeModal();
+    rerender();
+    toast(n ? `🔗 Collegate ${n} schede` : 'Nessuna scheda collegata');
+  }
+
+  // ── Aggiornamento dall'anagrafica (al massimo ogni 6 ore, con la rete) ──
+  // Cambia telefono, email e paese solo se sono cambiati IN NEGOZIO rispetto all'ultima copia:
+  // le correzioni fatte a mano nella scheda restano. Nome e azienda non vengono mai toccati.
+  async function refreshFromAna(force) {
+    if (!sb || !user || !navigator.onLine) return;
+    const last = +localStorage.getItem('md_ana_refresh') || 0;
+    if (!force && Date.now() - last < 6 * 3600e3) return;
+    const linked = db.clienti.filter(c => isUuid(c.anagrafica_id));
+    if (!linked.length) return;
+    localStorage.setItem('md_ana_refresh', String(Date.now()));
+    let changed = 0;
+    for (let i = 0; i < linked.length; i += 100) {
+      const ids = linked.slice(i, i + 100).map(c => c.anagrafica_id);
+      const { data, error } = await sb.from('clienti').select(ANA_FIELDS + ',deleted_at').in('id', ids);
+      if (error) return;
+      for (const r of data) {
+        if (r.deleted_at) continue;
+        const d = anaDati(r);
+        for (const c of linked.filter(x => x.anagrafica_id === r.id)) {
+          const prev = c.anagrafica_dati || {};
+          let mod = false;
+          for (const f of ['telefono', 'email', 'localita']) {
+            // senza una copia precedente completa solo i campi vuoti
+            const negozioCambiato = c.anagrafica_dati ? d[f] !== (prev[f] || '') : !(c[f] || '').trim();
+            if (negozioCambiato && d[f] && d[f] !== c[f]) { c[f] = d[f]; mod = true; }
+          }
+          if (mod || JSON.stringify(prev) !== JSON.stringify(d)) {
+            c.anagrafica_dati = d;
+            enqueue('up', 'cliente', c.id);
+            if (mod) changed++;
+          }
+        }
+      }
+    }
+    if (changed) { rerender(); toast(`↻ Aggiornati dal negozio ${changed} clienti`); }
+  }
 
   // ── Scheda cliente ────────────────────────────────────────────
   function localToday() {
@@ -2103,6 +2243,7 @@ Regole:
   function editCli(id) {
     const c = getCli(id) || { nome: '', localita: '', azienda: '', telefono: '', email: '' };
     st.editAna = c.anagrafica_id || null;
+    st.editAnaDati = c.anagrafica_dati || null;
     const n = id ? itemsOf(id).length : 0;
     openModal(`
       <div class="sheet-title">${id ? '✏️ Modifica cliente' : '➕ Nuovo cliente'}</div>
@@ -2149,6 +2290,7 @@ Regole:
     if (!r) return;
     st.editAna = r.id;
     const d = fromAna(r);
+    st.editAnaDati = d.anagrafica_dati;
     [['c-nome', d.nome], ['c-loc', d.localita], ['c-tel', d.telefono], ['c-mail', d.email]].forEach(([f, v]) => {
       const inp = document.getElementById(f);
       if (inp && !inp.value.trim() && v) inp.value = v;
@@ -2163,24 +2305,26 @@ Regole:
     const r = await getAna(st.editAna);
     if (!r) { toast('⚠️ Anagrafica non raggiungibile (sei offline?)'); return; }
     const d = fromAna(r);
+    st.editAnaDati = d.anagrafica_dati;
     [['c-nome', d.nome], ['c-loc', d.localita], ['c-tel', d.telefono], ['c-mail', d.email]].forEach(([f, v]) => {
       const inp = document.getElementById(f);
       if (inp && v) inp.value = v;
     });
     toast('↻ Dati aggiornati: tocca Salva per confermare');
   }
-  function anaUnlink() { st.editAna = null; renderAnaStatus(); }
+  function anaUnlink() { st.editAna = null; st.editAnaDati = null; renderAnaStatus(); }
 
   function saveCli(id) {
     const data = {
       nome: q('c-nome').trim(), localita: q('c-loc').trim(), azienda: q('c-az').trim(),
       telefono: q('c-tel').trim(), email: q('c-mail').trim(), anagrafica_id: st.editAna,
+      anagrafica_dati: st.editAna ? st.editAnaDati : null,
     };
     if (!data.nome) { toast('⚠️ Scrivi almeno il nome'); return; }
     let c = getCli(id);
     if (c) {
       Object.assign(c, data);
-      if (!c.anagrafica_id) delete c.anagrafica_id;
+      if (!c.anagrafica_id) { delete c.anagrafica_id; delete c.anagrafica_dati; }
       enqueue('up', 'cliente', c.id);
       // Il nome copiato negli elementi resta allineato (serve alla ricerca nelle Note)
       for (const it of itemsOf(c.id)) if (it.cliente !== c.nome) { it.cliente = c.nome; enqueue('up', it.tipo, it.id); }
@@ -2775,6 +2919,7 @@ Regole:
     recFor, renderClienti, openCli, editCli, saveCli, delCli, confirmDelCli,
     moveItem, pickOpen, pickBack, pickSearch, pickSet, pickNew, pickNone, pickAna,
     anaSearch, anaPick, anaRefresh, anaUnlink,
+    anaOpen, gooOpen, linkAll, linkConfirm,
     createSchede, skipSchede,
     init,
   };

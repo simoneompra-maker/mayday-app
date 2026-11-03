@@ -27,3 +27,7 @@ create policy mayday_clienti_delete on public.mayday_clienti for delete to authe
 comment on column public.mayday_appuntamenti.cliente_id is 'Scheda in mayday_clienti.id';
 comment on column public.mayday_task.cliente_id         is 'Scheda in mayday_clienti.id';
 comment on column public.mayday_note.cliente_id         is 'Scheda in mayday_clienti.id';
+
+-- v2.2: ultimi dati copiati dall'anagrafica, per aggiornare solo ciò che è cambiato in negozio
+alter table public.mayday_clienti add column anagrafica_dati jsonb;
+comment on column public.mayday_clienti.anagrafica_dati is 'Ultimi dati copiati dall''anagrafica negozio {telefono,email,localita}: serve a capire cosa è cambiato in negozio';
