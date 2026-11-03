@@ -1,4 +1,4 @@
-const CACHE = 'mayday-v6';
+const CACHE = 'mayday-v7';
 const ASSETS = ['./'];
 
 self.addEventListener('install', e => {
@@ -30,10 +30,12 @@ self.addEventListener('fetch', e => {
     return;
   }
 
-  // Page: network first, so updates arrive immediately; cache only when offline
+  // Page: network first, so updates arrive immediately; cache only when offline.
+  // cache:'no-cache' chiede sempre a GitHub se la pagina è cambiata, invece di
+  // riusare per 10 minuti la copia del browser (GitHub Pages manda max-age=600)
   if (e.request.mode === 'navigate') {
     e.respondWith(
-      fetch(e.request).then(resp => {
+      fetch(e.request.url, { cache: 'no-cache' }).then(resp => {
         if (resp.ok) {
           const clone = resp.clone();
           caches.open(CACHE).then(c => c.put(e.request, clone));
