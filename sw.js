@@ -1,4 +1,4 @@
-const CACHE = 'mayday-v8';
+const CACHE = 'mayday-v9';
 const ASSETS = ['./'];
 
 self.addEventListener('install', e => {

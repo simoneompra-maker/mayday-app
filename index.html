@@ -775,7 +775,7 @@
     </div>
 
     <div style="padding:16px;color:var(--dim);font-size:11px;text-align:center">
-      MAYDAY v2.2 · Uso personale · Dati su Supabase, copia offline sul telefono
+      MAYDAY v2.3 · Uso personale · Dati su Supabase, copia offline sul telefono
     </div>
   </section>
 
@@ -1340,7 +1340,8 @@ const A = (() => {
   function animWave() {
     const bars = document.querySelectorAll('.wbar');
     st.waveIv = setInterval(() => {
-      if (st.analyser) {
+      // Aperta da scorciatoia senza un tocco, l'audio di sistema può restare sospeso: onda simulata
+      if (st.analyser && st.audioCtx?.state === 'running') {
         const d = new Uint8Array(st.analyser.frequencyBinCount);
         st.analyser.getByteFrequencyData(d);
         bars.forEach((b, i) => {
@@ -2888,6 +2889,17 @@ Regole:
   window.addEventListener('beforeinstallprompt', e => e.preventDefault());
 
   // ── Init ──────────────────────────────────────────────────────
+  // Scorciatoie dell'icona (tieni premuto l'icona di MAYDAY): ./?go=rec|oggi|task|clienti
+  function openShortcut() {
+    const sc = new URLSearchParams(window.location.search).get('go');
+    if (!sc) return;
+    history.replaceState(null, '', window.location.pathname);
+    if (sc === 'oggi')    { go('agenda'); fAppt(document.querySelectorAll('#v-agenda .chip')[1], 'oggi'); }
+    if (sc === 'task')    { go('task');   fTask(document.querySelectorAll('#v-task .chip')[1], 'pend'); }
+    if (sc === 'clienti') go('clienti');
+    if (sc === 'rec')     toggleRec();
+  }
+
   function init() {
     load();
     upgradeIds();
@@ -2897,6 +2909,7 @@ Regole:
     renderPending();
     initAuth();
     setTimeout(maybeAskSchede, 2500);
+    openShortcut();
     window.addEventListener('online', () => { sync(); renderPending(); });
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') sync(); });
     if ('serviceWorker' in navigator)

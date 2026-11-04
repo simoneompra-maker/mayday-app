@@ -21,6 +21,63 @@
       "purpose": "any maskable"
     }
   ],
-  "categories": ["productivity", "utilities"],
-  "lang": "it"
+  "categories": [
+    "productivity",
+    "utilities"
+  ],
+  "lang": "it",
+  "shortcuts": [
+    {
+      "name": "Registra",
+      "short_name": "Registra",
+      "description": "Avvia subito la registrazione di un memo",
+      "url": "./?go=rec",
+      "icons": [
+        {
+          "src": "icons/sc-rec.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Agenda di oggi",
+      "short_name": "Oggi",
+      "description": "Appuntamenti di oggi",
+      "url": "./?go=oggi",
+      "icons": [
+        {
+          "src": "icons/sc-agenda.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Task da fare",
+      "short_name": "Task",
+      "description": "Task non ancora completati",
+      "url": "./?go=task",
+      "icons": [
+        {
+          "src": "icons/sc-task.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Clienti",
+      "short_name": "Clienti",
+      "description": "Schede clienti",
+      "url": "./?go=clienti",
+      "icons": [
+        {
+          "src": "icons/sc-clienti.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    }
+  ]
 }
