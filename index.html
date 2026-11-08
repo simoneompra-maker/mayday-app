@@ -2,7 +2,7 @@
 <html lang="it">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, interactive-widget=resizes-content">
   <title>MAYDAY</title>
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#FF8C00">
@@ -387,6 +387,7 @@
     .finp:focus { border-color: var(--red); }
     .finp::placeholder { color: var(--dim); }
     textarea.finp { resize: vertical; min-height: 76px; }
+    textarea.wbox { min-height: 32dvh; font-size: 17px; line-height: 1.45; }
 
     .btn {
       display: flex;
@@ -620,6 +621,7 @@
 
       <div class="rec-timer" id="rec-timer"></div>
       <div class="waveform" id="waveform"></div>
+      <button class="btn btn-sec" id="btn-write" style="width:auto;padding:10px 26px" onclick="A.openWrite()">✍️  Scrivi</button>
     </div>
 
     <div id="pending"></div>
@@ -775,7 +777,7 @@
     </div>
 
     <div style="padding:16px;color:var(--dim);font-size:11px;text-align:center">
-      MAYDAY v2.3 · Uso personale · Dati su Supabase, copia offline sul telefono
+      MAYDAY v2.4 · Uso personale · Dati su Supabase, copia offline sul telefono
     </div>
   </section>
 
@@ -984,7 +986,7 @@ const A = (() => {
     syncP = (async () => {
       let ok;
       do { syncAgain = false; ok = await doSync(); } while (syncAgain && ok);
-      if (ok) { setTimeout(maybeAskSchede, 300); setTimeout(refreshFromAna, 1500); }
+      if (ok) { setTimeout(maybeAskSchede, 300); setTimeout(refreshFromAna, 1500); setTimeout(preparePending, 600); }
       return ok;
     })().finally(() => { syncP = null; updateAccountUI(); });
     return syncP;
@@ -1167,13 +1169,51 @@ const A = (() => {
   const recDel = id => recTx('readwrite', s => s.delete(id)).catch(() => {});
   const recAll = () => recTx('readonly',  s => s.getAll()).then(l => l || []).catch(() => []);
 
+  const isScritto = r => typeof r.testo === 'string';
+
   async function renderPending() {
     const el = document.getElementById('pending');
     if (!el) return;
-    const n = (await recAll()).filter(r => r.id !== st.qRec).length;
+    const list = (await recAll()).filter(r => r.id !== st.qRec);
+    const n = list.length;
+    const nT = list.filter(isScritto).length, nA = n - nT;
+    const pronti = list.filter(r => r.items?.length).length;
+    const label = pronti === n
+      ? `✅  ${n} memo ${n > 1 ? 'pronti' : 'pronto'} da confermare`
+      : [nA ? `🎙️ ${nA} ${nA > 1 ? 'registrazioni' : 'registrazione'}` : '',
+         nT ? `✍️ ${nT} ${nT > 1 ? 'testi' : 'testo'}` : ''].filter(Boolean).join(' e ') + ' da elaborare';
     el.innerHTML = n
-      ? `<div style="padding:0 12px 8px"><button class="btn btn-sec" onclick="A.processPending()">🎙️  ${n} ${n > 1 ? 'registrazioni' : 'registrazione'} da elaborare</button></div>`
+      ? `<div style="padding:0 12px 8px"><button class="btn btn-sec" onclick="A.processPending()">${label}</button></div>`
       : '';
+  }
+
+  // Con la rete prepara in anticipo i memo in attesa (trascrizione + Gemini):
+  // resta solo da confermarli. Restituisce quanti ne ha preparati.
+  let preparing = false;
+  async function preparePending() {
+    if (preparing || st.busy || !navigator.onLine || (!cfg.geminiKey && !user)) return 0;
+    preparing = true;
+    let n = 0;
+    try {
+      for (const r of await recAll()) {
+        if (r.id === st.qRec || r.items?.length) continue;
+        try {
+          if (r.tx == null) {
+            if (isScritto(r)) r.tx = r.testo;
+            else if (cfg.groqKey) r.tx = await transcribe(r.blob, r.mime);
+            else continue;
+            await recPut(r);
+          }
+          r.items = await extract(r.tx, r.creato);
+          await recPut(r);
+          n++;
+        } catch { break; }   // rete o servizio non disponibili: si riprova più tardi
+      }
+    } finally {
+      preparing = false;
+      renderPending();
+    }
+    return n;
   }
 
   async function processPending() {
@@ -1182,7 +1222,7 @@ const A = (() => {
     if (!list.length) { renderPending(); return; }
     if (!navigator.onLine) { toast('📵 Sei offline: riprova quando torna la rete'); return; }
     st.busy = true;
-    setRecUI('proc', '⏳', 'ANALISI', 'Elaboro la registrazione salvata…');
+    setRecUI('proc', '⏳', 'ANALISI', 'Elaboro il memo salvato…');
     await processRec(list[0], true);
     setRecUI('', '🎙️', 'REGISTRA', 'Tocca per registrare');
     st.busy = false;
@@ -1231,6 +1271,58 @@ const A = (() => {
     await startRec();
     if (!st.rec) { st.recCli = null; return; }
     document.getElementById('rec-status').textContent = 'Registrazione per ' + c.nome + '…';
+  }
+
+  // ── Memo scritto ─────────────────────────────────────────────
+  // Stesso percorso della dettatura: salvato sul telefono, poi processRec (senza Groq)
+  function openWrite(cid) {
+    if (st.rec || st.busy) return;
+    const c = getCli(cid);
+    st.wCli = c ? c.id : null;
+    // Bozza salvata mentre si scrive: si ritrova se la finestra si chiude per sbaglio
+    let draft = {};
+    try { draft = JSON.parse(localStorage.getItem('md_bozza') || '{}'); } catch {}
+    const testo = (draft.cliente_id || null) === st.wCli ? draft.testo || '' : '';
+    openModal(`
+      <div class="sheet-title">✍️ ${c ? 'Scrivi per ' + esc(c.nome) : 'Scrivi un memo'}</div>
+      <textarea class="finp wbox" id="w-txt" rows="7" autocapitalize="sentences" autocorrect="on"
+        spellcheck="true" enterkeyhint="enter" oninput="A.saveDraft()"
+        placeholder="Es. Domani alle 9 da Rossi a Pinerolo per il preventivo, devo mandargli il listino…">${esc(testo)}</textarea>
+      <div class="hint">Puoi usare anche il 🎤 della tastiera.</div>
+      <div class="btn-row">
+        <button class="btn btn-sec" onclick="A.cancelWrite()">Annulla</button>
+        <button class="btn btn-pr" id="w-go" onclick="A.sendWrite()">✨ Elabora</button>
+      </div>`);
+    const ta = document.getElementById('w-txt');
+    ta.focus();
+    ta.setSelectionRange(ta.value.length, ta.value.length);
+  }
+  function saveDraft() {
+    try { localStorage.setItem('md_bozza', JSON.stringify({ testo: q('w-txt'), cliente_id: st.wCli })); } catch {}
+  }
+  function cancelWrite() { localStorage.removeItem('md_bozza'); closeModal(); }
+
+  async function sendWrite() {
+    const testo = q('w-txt').trim();
+    if (!testo) { toast('⚠️ Scrivi qualcosa prima di elaborare'); return; }
+    if (st.busy || st.rec) return;
+    st.busy = true;
+    const btn = document.getElementById('w-go');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spin"></span>&nbsp;Elaboro…';
+    // Prima di tutto salva il testo sul telefono: se Gemini non risponde non va perso
+    const rec  = { id: uid(), testo, creato: new Date().toISOString(), cliente_id: st.wCli || null };
+    const kept = await recPut(rec);
+    const ok   = await processRec(rec, kept);
+    if (kept || ok) {
+      localStorage.removeItem('md_bozza');
+      if (document.getElementById('w-txt')) closeModal();   // non elaborato: è in coda in Home
+    } else {
+      btn.disabled = false;
+      btn.textContent = '✨ Elabora';
+    }
+    st.busy = false;
+    renderPending();
   }
 
   async function startRec() {
@@ -1296,18 +1388,23 @@ const A = (() => {
 
   // Trascrive ed estrae; se qualcosa va storto la registrazione resta salvata per riprovare
   async function processRec(rec, kept) {
+    const scritto = isScritto(rec);
     try {
-      const tx = await transcribe(rec.blob, rec.mime);
-      const items = await extract(tx);
+      const tx = rec.tx ?? (scritto ? rec.testo : await transcribe(rec.blob, rec.mime));
+      const items = rec.items?.length ? rec.items : await extract(tx, rec.creato);
       const err = items[0]?._errore;
       if (err === 'troncata') toast('⚠️ Gemini non ha completato la risposta. Ho messo la tua dettatura come nota: puoi cambiarla o riprovare.', 6000);
       else if (err) toast('⚠️ Gemini ha risposto in modo illeggibile. Ho messo la tua dettatura come nota: controlla i campi prima di salvare.', 6000);
       st.queue = items; st.qIdx = 0; st.qTx = tx; st.qSaved = 0; st.qRec = kept ? rec.id : null;
       st.qFixed = rec.cliente_id && getCli(rec.cliente_id) ? rec.cliente_id : null;
+      st.qScritto = scritto;
       await showConfirmModal(tx, items[0]);
+      return true;
     } catch(e) {
       const why = navigator.onLine ? e.message : 'sei offline';
-      toast(kept ? `💾 Registrazione conservata (${why}): la trovi in Home` : '❌ ' + e.message, 6000);
+      const cosa = scritto ? 'Testo conservato' : 'Registrazione conservata';
+      toast(kept ? `💾 ${cosa} (${why}): lo trovi in Home` : '❌ ' + e.message, 6000);
+      return false;
     }
   }
 
@@ -1317,6 +1414,7 @@ const A = (() => {
     document.getElementById('rec-ico').textContent = ico;
     document.getElementById('rec-lbl').textContent = lbl;
     document.getElementById('rec-status').textContent = status;
+    document.getElementById('btn-write').style.display = cls ? 'none' : '';
   }
 
   function updateTimer() {
@@ -1410,12 +1508,14 @@ const A = (() => {
     required: ['elementi'],
   };
 
-  async function extract(text) {
+  // "quando" = momento in cui il memo è stato creato: "domani" resta giusto anche se elaborato dopo
+  async function extract(text, quando) {
     // Senza chiave sul telefono usa la funzione gemini-proxy di Supabase (chiave sul server)
     const session = !cfg.geminiKey && sb && user ? (await sb.auth.getSession()).data.session : null;
     if (!cfg.geminiKey && !session) return fallbackItem(text);
 
-    const d = new Date();
+    let d = new Date(quando || Date.now());
+    if (isNaN(d)) d = new Date();
     const today = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
     const weekday = d.toLocaleDateString('it-IT', { weekday: 'long' });
     const prompt = `Analizza questa dettatura vocale italiana ed estrai TUTTE le azioni che contiene.
@@ -1685,7 +1785,7 @@ Regole:
     openModal(`
       ${counter}
       <div class="ex-type ${tcls}">${tlab}</div>
-      <div class="flbl">Testo trascritto</div>
+      <div class="flbl">${st.qScritto ? 'Testo scritto' : 'Testo trascritto'}</div>
       <div class="tbox">${esc(transcription)}</div>
       ${ctcHtml}
       <div class="flbl" style="margin-bottom:10px">Verifica e correggi se necessario</div>
@@ -1743,7 +1843,7 @@ Regole:
       });
     }
     enqueue('up', tipo, id);
-    renderRecent();
+    rerender();
     st.qSaved++;
     nextEx();
   }
@@ -2233,7 +2333,11 @@ Regole:
         ${lines ? `<div class="cli-line">${lines}</div>` : ''}
         ${acts ? `<div class="cli-acts">${acts}</div>` : '<div style="height:10px"></div>'}
         ${c.anagrafica_id ? `<div class="hint" style="margin-bottom:10px">🔗 Collegato all'anagrafica negozio</div>` : ''}
-        <button class="btn btn-pr" onclick="A.recFor('${c.id}')">🎙️  Registra per questo cliente</button>
+        <div class="hint" style="margin-bottom:6px">Nuovo memo per questo cliente:</div>
+        <div class="btn-row" style="margin-top:0">
+          <button class="btn btn-pr" onclick="A.recFor('${c.id}')">🎙️  Registra</button>
+          <button class="btn btn-pr" onclick="A.openWrite('${c.id}')">✍️  Scrivi</button>
+        </div>
       </div>
       ${fut.length ? `<div class="sec-lbl">Prossimi (${fut.length})</div>${fut.map(it => renderCard(it)).join('')}` : ''}
       <div class="sec-lbl">Storico (${rest.length})</div>
@@ -2910,7 +3014,11 @@ Regole:
     initAuth();
     setTimeout(maybeAskSchede, 2500);
     openShortcut();
-    window.addEventListener('online', () => { sync(); renderPending(); });
+    window.addEventListener('online', () => {
+      sync();
+      preparePending().then(n => { if (n) toast('📶 Rete tornata: memo pronti da confermare in Home', 4000); });
+    });
+    setTimeout(preparePending, 3000);
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') sync(); });
     if ('serviceWorker' in navigator)
       navigator.serviceWorker.register('./sw.js').catch(()=>{});
@@ -2929,7 +3037,8 @@ Regole:
     clearAll, confirmClearAll,
     gAuth,
     sendLink, logout, syncNow, migrate, processPending,
-    recFor, renderClienti, openCli, editCli, saveCli, delCli, confirmDelCli,
+    recFor, renderClienti,
+    openWrite, saveDraft, cancelWrite, sendWrite, openCli, editCli, saveCli, delCli, confirmDelCli,
     moveItem, pickOpen, pickBack, pickSearch, pickSet, pickNew, pickNone, pickAna,
     anaSearch, anaPick, anaRefresh, anaUnlink,
     anaOpen, gooOpen, linkAll, linkConfirm,
