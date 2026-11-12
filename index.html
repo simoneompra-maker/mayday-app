@@ -202,7 +202,7 @@
     .p-bassa { background: var(--ok);   }
     .card-cli  { font-size: 16px; font-weight: 700; color: var(--text); flex: 1; }
     .card-meta { font-size: 14px; color: var(--dim); margin-bottom: 3px; }
-    .card-desc { font-size: 16px; color: var(--text); line-height: 1.4; }
+    .card-desc { font-size: 16px; color: var(--text); line-height: 1.4; white-space: pre-line; }
     .card-acts { display: flex; gap: 4px; justify-content: flex-end; margin-top: 8px; }
     .card.done  { opacity: .5; }
     .card.done .card-cli { text-decoration: line-through; }
@@ -595,6 +595,20 @@
     .sg-row .finp { padding: 8px 10px; }
     .sg-top { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
     .sg-top input[type=checkbox] { width: 22px; height: 22px; flex-shrink: 0; }
+    .thumbs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .thumb {
+      width: 64px; height: 64px; object-fit: cover; border-radius: 8px;
+      background: var(--bg3); border: 1px solid var(--border); cursor: pointer;
+    }
+    .qfoto { display: block; max-width: 100%; max-height: 30dvh; border-radius: var(--r); margin-bottom: 12px; }
+    #viewer {
+      position: fixed; inset: 0; z-index: 9999; display: none;
+      flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+      background: rgba(0,0,0,.92); padding: 16px;
+    }
+    #viewer.on { display: flex; }
+    #viewer img { max-width: 100%; max-height: 78dvh; border-radius: 8px; }
+    #viewer .btn-row { width: 100%; max-width: 420px; }
   </style>
 </head>
 <body>
@@ -621,7 +635,10 @@
 
       <div class="rec-timer" id="rec-timer"></div>
       <div class="waveform" id="waveform"></div>
-      <button class="btn btn-sec" id="btn-write" style="width:auto;padding:10px 26px" onclick="A.openWrite()">✍️  Scrivi</button>
+      <div style="display:flex;gap:9px">
+        <button class="btn btn-sec" id="btn-write" style="width:auto;padding:10px 26px" onclick="A.openWrite()">✍️  Scrivi</button>
+        <button class="btn btn-sec" id="btn-foto" style="width:auto;padding:10px 26px" onclick="A.fotoMemo()">📷  Foto</button>
+      </div>
     </div>
 
     <div id="pending"></div>
@@ -777,7 +794,7 @@
     </div>
 
     <div style="padding:16px;color:var(--dim);font-size:11px;text-align:center">
-      MAYDAY v2.4 · Uso personale · Dati su Supabase, copia offline sul telefono
+      MAYDAY v2.5 · Uso personale · Dati su Supabase, copia offline sul telefono
     </div>
   </section>
 
@@ -807,6 +824,16 @@
   <div class="sheet" onclick="event.stopPropagation()">
     <div class="sheet-handle"></div>
     <div id="modal-body"></div>
+  </div>
+</div>
+
+<!-- FOTO: scelta del file (fotocamera o galleria) e visualizzazione a schermo intero -->
+<input type="file" id="foto-in" accept="image/*" style="display:none" onchange="A.onFoto(this)">
+<div id="viewer" onclick="A.closeViewer()">
+  <img id="viewer-img" alt="">
+  <div class="btn-row" onclick="event.stopPropagation()">
+    <button class="btn btn-sec" onclick="A.closeViewer()">Chiudi</button>
+    <button class="btn" style="background:var(--red);color:#fff;flex:1" id="viewer-del" onclick="A.delFoto()">🗑️ Elimina foto</button>
   </div>
 </div>
 
@@ -848,12 +875,18 @@ const A = (() => {
     anaRes: [],     // ultimi risultati dall'anagrafica negozio
     editAna: null,  // collegamento all'anagrafica nella scheda in modifica
     schedeAsked: false,
+    qFoto: null,    // foto del memo che si sta confermando: viene allegata al primo elemento salvato
+    fotoFor: null,  // a cosa va la foto scelta: { tipo, id } (allegato) | { memo, cid } (letta da Gemini)
+    editing: null,  // elemento aperto in Modifica: { tipo, id }
+    voce: null,     // registrazione "Aggiungi a voce" in corso
+    viewing: null,  // id dell'allegato aperto a schermo intero
   };
 
   // ── DB ───────────────────────────────────────────────────────
   // Copia locale dei dati (cache offline); la fonte principale è Supabase
-  let db = { clienti: [], appointments: [], tasks: [], notes: [] };
+  let db = { clienti: [], appointments: [], tasks: [], notes: [], allegati: [] };
   let outbox = [];  // operazioni da inviare a Supabase: { op:'up'|'del', tipo, id }
+  let fdel = [];    // nomi delle foto da cancellare dallo Storage
 
   // ── Supabase ─────────────────────────────────────────────────
   // Chiave pubblica (publishable/anon): i dati sono protetti dalle policy RLS
@@ -868,8 +901,9 @@ const A = (() => {
   let user = null;
   let lastSync = null, lastErr = '';
   // Le schede clienti vengono per prime, così sono inviate prima degli elementi collegati
-  const TABLES = { cliente: 'mayday_clienti', appuntamento: 'mayday_appuntamenti', task: 'mayday_task', nota: 'mayday_note' };
-  const LISTS  = { cliente: 'clienti',        appuntamento: 'appointments',        task: 'tasks',       nota: 'notes' };
+  const TABLES = { cliente: 'mayday_clienti', appuntamento: 'mayday_appuntamenti', task: 'mayday_task', nota: 'mayday_note', allegato: 'mayday_allegati' };
+  const LISTS  = { cliente: 'clienti',        appuntamento: 'appointments',        task: 'tasks',       nota: 'notes',       allegato: 'allegati' };
+  const BUCKET = 'mayday-foto';
 
   // ── Settings ─────────────────────────────────────────────────
   let cfg = {
@@ -884,10 +918,12 @@ const A = (() => {
     try { const d = localStorage.getItem('md_db');  if (d) db  = { ...db, ...JSON.parse(d) }; } catch{}
     try { const s = localStorage.getItem('md_cfg'); if (s) cfg = { ...cfg, ...JSON.parse(s) }; } catch{}
     try { const o = localStorage.getItem('md_outbox'); if (o) outbox = JSON.parse(o) || []; } catch{}
+    try { const f = localStorage.getItem('md_fdel');   if (f) fdel   = JSON.parse(f) || []; } catch{}
   }
   function save()       { localStorage.setItem('md_db',  JSON.stringify(db));  }
   function saveCfg()    { localStorage.setItem('md_cfg', JSON.stringify(cfg)); }
   function saveOutbox() { localStorage.setItem('md_outbox', JSON.stringify(outbox)); }
+  function saveFdel()   { localStorage.setItem('md_fdel', JSON.stringify(fdel)); }
   function uid() {
     if (crypto.randomUUID) return crypto.randomUUID();
     return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
@@ -941,6 +977,10 @@ const A = (() => {
       anagrafica_dati: isUuid(it.anagrafica_id) ? it.anagrafica_dati || null : null,
       creato: isoTs(it.creato), aggiornato: isoTs(it.aggiornato || it.creato),
     };
+    if (tipo === 'allegato') return {
+      id: it.id, user_id: user.id, item_tipo: tipoOf(it.item_tipo), item_id: it.item_id, nome: it.nome,
+      creato: isoTs(it.creato), aggiornato: isoTs(it.aggiornato || it.creato),
+    };
     const r = {
       id: it.id, user_id: user.id, legacy_id: it.legacy_id || null,
       cliente: it.cliente || '', cliente_id: isUuid(it.cliente_id) ? it.cliente_id : null,
@@ -967,6 +1007,8 @@ const A = (() => {
       if (r.anagrafica_dati) c.anagrafica_dati = r.anagrafica_dati;
       return c;
     }
+    if (tipo === 'allegato') return { id: r.id, tipo, item_tipo: r.item_tipo, item_id: r.item_id, nome: r.nome,
+                                      creato: isoTs(r.creato), aggiornato: isoTs(r.aggiornato) };
     const it = { id: r.id, tipo, cliente: r.cliente || '', descrizione: r.descrizione || '',
                  creato: isoTs(r.creato), aggiornato: isoTs(r.aggiornato) };
     if (r.legacy_id)  it.legacy_id  = r.legacy_id;
@@ -996,6 +1038,7 @@ const A = (() => {
     if (!sb || !user || !navigator.onLine) return false;
     if (localStorage.getItem('md_migrated') !== user.id) return false;
     try {
+      await syncFoto();
       await flush();
       await pull();
       lastSync = new Date(); lastErr = '';
@@ -1024,6 +1067,26 @@ const A = (() => {
     // Toglie solo le operazioni inviate: nel frattempo potrebbero esserne arrivate altre
     outbox = outbox.filter(o => !ops.includes(o));
     saveOutbox();
+  }
+
+  // Carica le foto scattate sul telefono e cancella quelle eliminate (prima delle righe in tabella)
+  async function syncFoto() {
+    for (const f of await fotoAll()) {
+      if (f.up) continue;
+      const a = findItem('allegato', f.id);
+      if (!a) { await fotoDel(f.id); continue; }   // eliminata prima di essere caricata
+      const { error } = await sb.storage.from(BUCKET)
+        .upload(`${user.id}/${a.nome}`, f.blob, { contentType: 'image/jpeg', upsert: true });
+      if (error) throw error;
+      f.up = true;
+      await fotoPut(f);
+    }
+    const nomi = [...fdel];
+    if (!nomi.length) return;
+    const { error } = await sb.storage.from(BUCKET).remove(nomi.map(n => `${user.id}/${n}`));
+    if (error) throw error;
+    fdel = fdel.filter(n => !nomi.includes(n));
+    saveFdel();
   }
 
   async function fetchAll(table) {
@@ -1150,17 +1213,21 @@ const A = (() => {
   // L'audio resta salvato sul telefono finché la dettatura non è stata gestita
   function recDb() {
     return new Promise((res, rej) => {
-      const r = indexedDB.open('mayday', 1);
-      r.onupgradeneeded = () => r.result.createObjectStore('rec', { keyPath: 'id' });
+      // v2: archivio "foto" (allegati scattati sul telefono, anche prima di essere caricati)
+      const r = indexedDB.open('mayday', 2);
+      r.onupgradeneeded = () => {
+        for (const s of ['rec', 'foto'])
+          if (!r.result.objectStoreNames.contains(s)) r.result.createObjectStore(s, { keyPath: 'id' });
+      };
       r.onsuccess = () => res(r.result);
       r.onerror   = () => rej(r.error);
     });
   }
-  async function recTx(mode, fn) {
+  async function recTx(mode, fn, store = 'rec') {
     const d = await recDb();
     return new Promise((res, rej) => {
-      const tx  = d.transaction('rec', mode);
-      const req = fn(tx.objectStore('rec'));
+      const tx  = d.transaction(store, mode);
+      const req = fn(tx.objectStore(store));
       tx.oncomplete = () => { d.close(); res(req.result); };
       tx.onerror    = () => { d.close(); rej(tx.error); };
     });
@@ -1168,20 +1235,28 @@ const A = (() => {
   const recPut = r  => recTx('readwrite', s => s.put(r)).then(() => true).catch(() => false);
   const recDel = id => recTx('readwrite', s => s.delete(id)).catch(() => {});
   const recAll = () => recTx('readonly',  s => s.getAll()).then(l => l || []).catch(() => []);
+  const fotoPut = f  => recTx('readwrite', s => s.put(f), 'foto').then(() => true).catch(() => false);
+  const fotoDel = id => recTx('readwrite', s => s.delete(id), 'foto').catch(() => {});
+  const fotoGet = id => recTx('readonly',  s => s.get(id), 'foto').catch(() => null);
+  const fotoAll = () => recTx('readonly',  s => s.getAll(), 'foto').then(l => l || []).catch(() => []);
 
   const isScritto = r => typeof r.testo === 'string';
+  const isFoto    = r => !!r.foto;
+  // "Aggiungi a voce" registrato offline: si trascrive e si accoda da solo, non va confermato
+  const isMemo    = r => !r.append;
 
   async function renderPending() {
     const el = document.getElementById('pending');
     if (!el) return;
-    const list = (await recAll()).filter(r => r.id !== st.qRec);
+    const list = (await recAll()).filter(r => r.id !== st.qRec && isMemo(r));
     const n = list.length;
-    const nT = list.filter(isScritto).length, nA = n - nT;
+    const nT = list.filter(isScritto).length, nF = list.filter(isFoto).length, nA = n - nT - nF;
     const pronti = list.filter(r => r.items?.length).length;
     const label = pronti === n
       ? `✅  ${n} memo ${n > 1 ? 'pronti' : 'pronto'} da confermare`
       : [nA ? `🎙️ ${nA} ${nA > 1 ? 'registrazioni' : 'registrazione'}` : '',
-         nT ? `✍️ ${nT} ${nT > 1 ? 'testi' : 'testo'}` : ''].filter(Boolean).join(' e ') + ' da elaborare';
+         nT ? `✍️ ${nT} ${nT > 1 ? 'testi' : 'testo'}` : '',
+         nF ? `📷 ${nF} foto` : ''].filter(Boolean).join(' e ') + ' da elaborare';
     el.innerHTML = n
       ? `<div style="padding:0 12px 8px"><button class="btn btn-sec" onclick="A.processPending()">${label}</button></div>`
       : '';
@@ -1198,13 +1273,22 @@ const A = (() => {
       for (const r of await recAll()) {
         if (r.id === st.qRec || r.items?.length) continue;
         try {
+          if (!isMemo(r)) {
+            if (!cfg.groqKey) continue;
+            const tx = (await transcribe(r.blob, r.mime)).trim();
+            if (tx) appendVoce(r.append, tx, r.creato);
+            await recDel(r.id);
+            if (tx) toast('🎙️ Aggiunta a voce trascritta e salvata', 3500);
+            continue;
+          }
           if (r.tx == null) {
             if (isScritto(r)) r.tx = r.testo;
+            else if (isFoto(r)) r.tx = '';
             else if (cfg.groqKey) r.tx = await transcribe(r.blob, r.mime);
             else continue;
             await recPut(r);
           }
-          r.items = await extract(r.tx, r.creato);
+          r.items = await extract(r.tx, r.creato, isFoto(r) ? r.foto : null);
           await recPut(r);
           n++;
         } catch { break; }   // rete o servizio non disponibili: si riprova più tardi
@@ -1218,7 +1302,7 @@ const A = (() => {
 
   async function processPending() {
     if (st.busy || st.rec) return;
-    const list = (await recAll()).sort((a,b) => (a.creato||'').localeCompare(b.creato||''));
+    const list = (await recAll()).filter(isMemo).sort((a,b) => (a.creato||'').localeCompare(b.creato||''));
     if (!list.length) { renderPending(); return; }
     if (!navigator.onLine) { toast('📵 Sei offline: riprova quando torna la rete'); return; }
     st.busy = true;
@@ -1388,21 +1472,22 @@ const A = (() => {
 
   // Trascrive ed estrae; se qualcosa va storto la registrazione resta salvata per riprovare
   async function processRec(rec, kept) {
-    const scritto = isScritto(rec);
+    const scritto = isScritto(rec), foto = isFoto(rec);
     try {
-      const tx = rec.tx ?? (scritto ? rec.testo : await transcribe(rec.blob, rec.mime));
-      const items = rec.items?.length ? rec.items : await extract(tx, rec.creato);
+      const tx = rec.tx ?? (scritto ? rec.testo : foto ? '' : await transcribe(rec.blob, rec.mime));
+      const items = rec.items?.length ? rec.items : await extract(tx, rec.creato, foto ? rec.foto : null);
       const err = items[0]?._errore;
       if (err === 'troncata') toast('⚠️ Gemini non ha completato la risposta. Ho messo la tua dettatura come nota: puoi cambiarla o riprovare.', 6000);
       else if (err) toast('⚠️ Gemini ha risposto in modo illeggibile. Ho messo la tua dettatura come nota: controlla i campi prima di salvare.', 6000);
       st.queue = items; st.qIdx = 0; st.qTx = tx; st.qSaved = 0; st.qRec = kept ? rec.id : null;
       st.qFixed = rec.cliente_id && getCli(rec.cliente_id) ? rec.cliente_id : null;
       st.qScritto = scritto;
+      setQFoto(foto ? rec.foto : null);
       await showConfirmModal(tx, items[0]);
       return true;
     } catch(e) {
       const why = navigator.onLine ? e.message : 'sei offline';
-      const cosa = scritto ? 'Testo conservato' : 'Registrazione conservata';
+      const cosa = scritto ? 'Testo conservato' : foto ? 'Foto conservata' : 'Registrazione conservata';
       toast(kept ? `💾 ${cosa} (${why}): lo trovi in Home` : '❌ ' + e.message, 6000);
       return false;
     }
@@ -1477,7 +1562,7 @@ const A = (() => {
   // ── Gemini extraction ─────────────────────────────────────────
   // Restituisce sempre un elenco di elementi (uno per ogni azione dettata)
   function fallbackItem(text, errore) {
-    const it = { tipo:'nota', cliente:'', cliente_localita:'', cliente_azienda:'', descrizione: text, data:'', ora:'', scadenza:'', priorita:'media', luogo:'' };
+    const it = { tipo:'nota', cliente:'', cliente_localita:'', cliente_azienda:'', cliente_telefono:'', cliente_email:'', descrizione: text, data:'', ora:'', scadenza:'', priorita:'media', luogo:'' };
     if (errore) it._errore = errore;
     return [it];
   }
@@ -1494,6 +1579,8 @@ const A = (() => {
             cliente:     { type: 'STRING' },
             cliente_localita: { type: 'STRING' },
             cliente_azienda:  { type: 'STRING' },
+            cliente_telefono: { type: 'STRING' },
+            cliente_email:    { type: 'STRING' },
             data:        { type: 'STRING' },
             ora:         { type: 'STRING' },
             descrizione: { type: 'STRING' },
@@ -1509,7 +1596,9 @@ const A = (() => {
   };
 
   // "quando" = momento in cui il memo è stato creato: "domani" resta giusto anche se elaborato dopo
-  async function extract(text, quando) {
+  // "img" = foto (Blob JPEG) da leggere al posto della dettatura
+  async function extract(text, quando, img) {
+    if (img && !text) text = '📷 Foto';
     // Senza chiave sul telefono usa la funzione gemini-proxy di Supabase (chiave sul server)
     const session = !cfg.geminiKey && sb && user ? (await sb.auth.getSession()).data.session : null;
     if (!cfg.geminiKey && !session) return fallbackItem(text);
@@ -1518,13 +1607,20 @@ const A = (() => {
     if (isNaN(d)) d = new Date();
     const today = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
     const weekday = d.toLocaleDateString('it-IT', { weekday: 'long' });
-    const prompt = `Analizza questa dettatura vocale italiana ed estrai TUTTE le azioni che contiene.
+    const head = img
+      ? `Analizza questa FOTO ed estrai TUTTE le azioni e le informazioni utili che contiene.
+Può essere un biglietto da visita, un preventivo, un documento, una lavagna o un appunto scritto a mano.
+- Biglietto da visita: crea una nota con tutti i dati letti (nome, ditta, ruolo, telefono, email, indirizzo, sito) e compila cliente, cliente_azienda, cliente_localita, cliente_telefono, cliente_email
+- Preventivo o documento: una nota che riassume cosa contiene (chi, cosa, importi, date); se ci sono scadenze o cose da fare crea anche le task
+- Appunto a mano: trascrivilo e trattalo come una dettatura`
+      : `Analizza questa dettatura vocale italiana ed estrai TUTTE le azioni che contiene.
 
-DETTATURA: "${text}"
+DETTATURA: "${text}"`;
+    const prompt = `${head}
 
 Rispondi SOLO con JSON puro, senza backtick, senza testo aggiuntivo, senza spiegazioni.
 Formato esatto:
-{"elementi":[{"tipo":"appuntamento"|"task"|"nota","cliente":"nome o stringa vuota","cliente_localita":"paese del cliente o stringa vuota","cliente_azienda":"ditta del cliente o stringa vuota","data":"YYYY-MM-DD o stringa vuota","ora":"HH:MM o stringa vuota","descrizione":"testo descrittivo conciso","scadenza":"YYYY-MM-DD o stringa vuota","priorita":"alta"|"media"|"bassa","luogo":"luogo o stringa vuota"}]}
+{"elementi":[{"tipo":"appuntamento"|"task"|"nota","cliente":"nome o stringa vuota","cliente_localita":"paese del cliente o stringa vuota","cliente_azienda":"ditta del cliente o stringa vuota","cliente_telefono":"telefono del cliente o stringa vuota","cliente_email":"email del cliente o stringa vuota","data":"YYYY-MM-DD o stringa vuota","ora":"HH:MM o stringa vuota","descrizione":"testo descrittivo conciso","scadenza":"YYYY-MM-DD o stringa vuota","priorita":"alta"|"media"|"bassa","luogo":"luogo o stringa vuota"}]}
 
 Regole:
 - Crea UN elemento per OGNI azione distinta. Una dettatura può contenere sia un appuntamento sia una o più task: separale sempre.
@@ -1538,12 +1634,15 @@ Regole:
 - "cliente" = nome e/o cognome della persona o della ditta, come detto (es. "Mario Rossi", "Rossi", "Verdi Giardini"), senza titoli come sig., dott., geom.
 - "cliente_localita" = paese o città DEL CLIENTE se detto (es. "Rossi di Pinerolo" → "Pinerolo"), altrimenti stringa vuota
 - "cliente_azienda" = nome della ditta se il cliente è una persona di un'azienda (es. "Luca della Verdi srl" → cliente "Luca", azienda "Verdi srl"), altrimenti stringa vuota
+- "cliente_telefono" e "cliente_email" solo se scritti o detti esplicitamente, altrimenti stringa vuota
 - "luogo" resta il posto dell'appuntamento; se coincide con il paese del cliente compila entrambi
 - Non inventare: se il nome del cliente non è detto, "cliente" è stringa vuota`;
 
     const model = 'gemini-3-flash-preview';
+    const parts = [{ text: prompt }];
+    if (img) parts.unshift({ inline_data: { mime_type: 'image/jpeg', data: await toBase64(img) } });
     const call = gen => {
-      const body = { contents: [{ parts: [{ text: prompt }] }], generationConfig: gen };
+      const body = { contents: [{ parts }], generationConfig: gen };
       if (cfg.geminiKey) return fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${cfg.geminiKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1600,6 +1699,8 @@ Regole:
       cliente:    String(p.cliente    || ''),
       cliente_localita: String(p.cliente_localita || ''),
       cliente_azienda:  String(p.cliente_azienda  || ''),
+      cliente_telefono: String(p.cliente_telefono || ''),
+      cliente_email:    String(p.cliente_email    || ''),
       descrizione:String(p.descrizione|| p.nota || ''),
       data:       String(p.data       || ''),
       ora:        String(p.ora        || ''),
@@ -1785,8 +1886,11 @@ Regole:
     openModal(`
       ${counter}
       <div class="ex-type ${tcls}">${tlab}</div>
-      <div class="flbl">${st.qScritto ? 'Testo scritto' : 'Testo trascritto'}</div>
-      <div class="tbox">${esc(transcription)}</div>
+      ${st.qFoto
+        ? `<div class="flbl">Foto letta${st.qFoto.done ? '' : ' · verrà allegata a questo elemento'}</div>
+           <img class="qfoto" src="${st.qFoto.url}" alt="">`
+        : `<div class="flbl">${st.qScritto ? 'Testo scritto' : 'Testo trascritto'}</div>
+           <div class="tbox">${esc(transcription)}</div>`}
       ${ctcHtml}
       <div class="flbl" style="margin-bottom:10px">Verifica e correggi se necessario</div>
       ${fields}
@@ -1843,6 +1947,8 @@ Regole:
       });
     }
     enqueue('up', tipo, id);
+    // La foto letta da Gemini va al primo elemento salvato
+    if (st.qFoto && !st.qFoto.done) { st.qFoto.done = true; addFoto(tipo, id, st.qFoto.blob); }
     rerender();
     st.qSaved++;
     nextEx();
@@ -1859,7 +1965,7 @@ Regole:
     }
     // Dettatura gestita del tutto: l'audio salvato non serve più
     const recId = st.qRec;
-    st.qRec = null; st.qFixed = null;
+    st.qRec = null; st.qFixed = null; setQFoto(null);
     if (recId) recDel(recId).then(renderPending);
     closeModal();
     const n = st.qSaved;
@@ -2093,7 +2199,8 @@ Regole:
     const ex = st.qEx || {};
     const nome = (fromQuery ? st.pick.q : ex.cliente || '').trim();
     if (!nome) return;
-    pickDone({ nuovo: fromQuery ? { nome } : { nome, localita: ex.cliente_localita || '', azienda: ex.cliente_azienda || '' } });
+    pickDone({ nuovo: fromQuery ? { nome } : { nome, localita: ex.cliente_localita || '', azienda: ex.cliente_azienda || '',
+                                                telefono: ex.cliente_telefono || '', email: ex.cliente_email || '' } });
   }
   function pickAna(i) {
     const r = st.anaRes[i];
@@ -2337,6 +2444,7 @@ Regole:
         <div class="btn-row" style="margin-top:0">
           <button class="btn btn-pr" onclick="A.recFor('${c.id}')">🎙️  Registra</button>
           <button class="btn btn-pr" onclick="A.openWrite('${c.id}')">✍️  Scrivi</button>
+          <button class="btn btn-pr" onclick="A.fotoMemo('${c.id}')">📷  Foto</button>
         </div>
       </div>
       ${fut.length ? `<div class="sec-lbl">Prossimi (${fut.length})</div>${fut.map(it => renderCard(it)).join('')}` : ''}
@@ -2660,9 +2768,11 @@ Regole:
       ${cliHtml}
       ${meta?`<div class="card-meta">${meta}</div>`:''}
       ${item.descrizione?`<div class="card-desc">${esc(item.descrizione)}</div>`:''}
+      ${thumbsHtml(item.id)}
       <div class="card-acts">
         ${calBtn}
         ${taskBtn}
+        <button class="icobtn" onclick="A.fotoPer('${tipo}','${item.id}')" title="Aggiungi foto">📷</button>
         <button class="icobtn" onclick="A.moveItem('${item.id}','${tipo}')" title="Cliente">👤</button>
         <button class="icobtn" onclick="A.editItem('${item.id}','${tipo}')" title="Modifica">✏️</button>
         <button class="icobtn del" onclick="A.delItem('${item.id}','${tipo}')" title="Elimina">🗑️</button>
@@ -2696,6 +2806,7 @@ Regole:
     else if (tipo==='task')    db.tasks=db.tasks.filter(x=>x.id!==id);
     else                       db.notes=db.notes.filter(x=>x.id!==id);
     enqueue('del', tipo, id);
+    fotosOf(id).forEach(a => removeFoto(a.id));
     document.getElementById('card-'+id)?.remove();
     toast('🗑️ Eliminato');
   }
@@ -2757,9 +2868,15 @@ Regole:
           <textarea class="finp" id="e-desc" style="min-height:90px">${esc(item.descrizione||'')}</textarea></div>`;
     }
 
+    st.editing = { tipo, id };
     openModal(`
       <div class="sheet-title">✏️ Modifica ${tipo}</div>
       ${fields}
+      <div class="btn-row">
+        <button class="btn btn-sec" id="e-voce" onclick="A.voce()">🎙️ A voce</button>
+        <button class="btn btn-sec" onclick="A.fotoPer('${tipo}','${id}')">📷 Foto</button>
+      </div>
+      <div id="e-fotos">${thumbsHtml(id)}</div>
       <div class="btn-row">
         <button class="btn btn-sec" onclick="A.closeModal()">Annulla</button>
         <button class="btn btn-pr"  onclick="A.saveEdit('${id}','${tipo}')">Salva</button>
@@ -2779,7 +2896,215 @@ Regole:
       const it=db.notes.find(x=>x.id===id);
       if(it){ it.cliente=cl.nome;it.cliente_id=cl.id;it.descrizione=q('e-desc'); }
     }
+    st.editing = null;
     enqueue('up', tipo, id); closeModal(); rerender(); toast('✅ Modificato!');
+  }
+
+  // ── Foto allegate ─────────────────────────────────────────────
+  const pad2 = n => String(n).padStart(2, '0');
+  // Nome del file con la data in formato italiano: 12-11-2026_09-40-15_ab12.jpg
+  function nomeFoto(d = new Date()) {
+    return `${pad2(d.getDate())}-${pad2(d.getMonth()+1)}-${d.getFullYear()}_` +
+           `${pad2(d.getHours())}-${pad2(d.getMinutes())}-${pad2(d.getSeconds())}_${uid().slice(0,4)}.jpg`;
+  }
+  function fotosOf(id) {
+    return db.allegati.filter(a => a.item_id === id).sort((a,b) => (a.creato||'').localeCompare(b.creato||''));
+  }
+  function thumbsHtml(id) {
+    const l = fotosOf(id);
+    return l.length
+      ? `<div class="thumbs">${l.map(a => `<img class="thumb" data-foto="${a.id}" alt="" onclick="A.viewFoto('${a.id}')">`).join('')}</div>`
+      : '';
+  }
+  function refreshEditFotos() {
+    const el = document.getElementById('e-fotos');
+    if (el && st.editing) el.innerHTML = thumbsHtml(st.editing.id);
+  }
+
+  // Riduce la foto (lato lungo max 1600 px, JPEG): circa 200–400 KB
+  async function shrink(file, max = 1600) {
+    let src;
+    try { src = await createImageBitmap(file, { imageOrientation: 'from-image' }); }
+    catch {
+      const u = URL.createObjectURL(file);
+      src = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = u; })
+        .finally(() => URL.revokeObjectURL(u));
+    }
+    const k = Math.min(1, max / Math.max(src.width, src.height));
+    const c = document.createElement('canvas');
+    c.width = Math.round(src.width * k); c.height = Math.round(src.height * k);
+    c.getContext('2d').drawImage(src, 0, 0, c.width, c.height);
+    src.close?.();
+    return new Promise((res, rej) => c.toBlob(b => b ? res(b) : rej(new Error('foto non leggibile')), 'image/jpeg', 0.72));
+  }
+  function toBase64(blob) {
+    return new Promise((res, rej) => {
+      const r = new FileReader();
+      r.onload  = () => res(String(r.result).split(',')[1]);
+      r.onerror = () => rej(r.error);
+      r.readAsDataURL(blob);
+    });
+  }
+
+  // La stessa scelta (fotocamera o galleria) serve sia per allegare sia per far leggere la foto a Gemini
+  function fotoPer(tipo, id) { st.fotoFor = { tipo, id }; pickFile(); }
+  function fotoMemo(cid) {
+    if (st.rec || st.busy) return;
+    st.fotoFor = { memo: true, cid: getCli(cid) ? cid : null };
+    pickFile();
+  }
+  function pickFile() { const i = document.getElementById('foto-in'); i.value = ''; i.click(); }
+
+  async function onFoto(inp) {
+    const file = inp.files?.[0], dest = st.fotoFor;
+    st.fotoFor = null;
+    if (!file || !dest) return;
+    let blob;
+    try { blob = await shrink(file); } catch { toast('❌ Non riesco a leggere questa foto'); return; }
+    inp.value = '';
+    if (dest.memo) { await fotoMemoGo(blob, dest.cid); return; }
+    if (await addFoto(dest.tipo, dest.id, blob)) toast('📷 Foto aggiunta');
+  }
+
+  // Foto letta da Gemini: stesso percorso del memo scritto (salvata sul telefono, poi processRec)
+  async function fotoMemoGo(blob, cid) {
+    if (st.busy || st.rec) return;
+    st.busy = true;
+    setRecUI('proc', '⏳', 'ANALISI', 'Leggo la foto…');
+    if (st.view !== 'home') toast('📷 Leggo la foto…', 4000);
+    const rec  = { id: uid(), foto: blob, creato: new Date().toISOString(), cliente_id: cid };
+    const kept = await recPut(rec);
+    await processRec(rec, kept);
+    setRecUI('', '🎙️', 'REGISTRA', 'Tocca per registrare');
+    st.busy = false;
+    renderPending();
+  }
+  function setQFoto(blob) {
+    if (st.qFoto) URL.revokeObjectURL(st.qFoto.url);
+    st.qFoto = blob ? { blob, url: URL.createObjectURL(blob), done: false } : null;
+  }
+
+  // La foto resta sul telefono e viene caricata su Supabase alla sincronizzazione
+  async function addFoto(tipo, id, blob) {
+    const a = { id: uid(), tipo: 'allegato', item_tipo: tipoOf(tipo), item_id: id, nome: nomeFoto(), creato: new Date().toISOString() };
+    if (!await fotoPut({ id: a.id, blob, up: false })) { toast('❌ Non riesco a salvare la foto sul telefono'); return false; }
+    db.allegati.push(a);
+    enqueue('up', 'allegato', a.id);
+    rerender(); refreshEditFotos();
+    return true;
+  }
+  function removeFoto(id) {
+    const a = findItem('allegato', id);
+    if (!a) return;
+    db.allegati = db.allegati.filter(x => x.id !== id);
+    fotoDel(id);
+    const u = fotoUrls.get(id);
+    if (u) { URL.revokeObjectURL(u); fotoUrls.delete(id); }
+    fdel.push(a.nome); saveFdel();
+    enqueue('del', 'allegato', id);
+  }
+
+  // Le miniature si riempiono da sole: copia sul telefono se c'è, altrimenti la scarica
+  // da Supabase e la tiene sul telefono (così si vede anche offline)
+  const fotoUrls = new Map();   // id allegato → object URL
+  const fotoFail = new Map();   // id allegato → ultimo tentativo fallito (si riprova dopo un minuto)
+  let fillT = null, filling = false;
+  function fillThumbs() {
+    clearTimeout(fillT);
+    fillT = setTimeout(async () => {
+      if (filling) { fillThumbs(); return; }
+      filling = true;
+      try {
+        const ids = new Set([...document.querySelectorAll('img[data-foto]:not([src])')].map(i => i.dataset.foto));
+        for (const id of ids) {
+          if (fotoUrls.has(id) || Date.now() - (fotoFail.get(id) || 0) < 60000) continue;
+          let blob = (await fotoGet(id))?.blob;
+          const a = findItem('allegato', id);
+          if (!blob && a && sb && user && navigator.onLine) {
+            const { data } = await sb.storage.from(BUCKET).download(`${user.id}/${a.nome}`).catch(() => ({}));
+            if (data) { blob = data; await fotoPut({ id, blob, up: true }); }
+          }
+          if (blob) fotoUrls.set(id, URL.createObjectURL(blob)); else fotoFail.set(id, Date.now());
+        }
+        for (const img of document.querySelectorAll('img[data-foto]:not([src])'))
+          if (fotoUrls.has(img.dataset.foto)) img.src = fotoUrls.get(img.dataset.foto);
+      } finally { filling = false; }
+    }, 50);
+  }
+
+  function viewFoto(id) {
+    const u = fotoUrls.get(id);
+    if (!u) return;
+    st.viewing = id;
+    document.getElementById('viewer-img').src = u;
+    const b = document.getElementById('viewer-del');
+    delete b.dataset.sure; b.textContent = '🗑️ Elimina foto';
+    document.getElementById('viewer').classList.add('on');
+  }
+  function closeViewer() { document.getElementById('viewer').classList.remove('on'); st.viewing = null; }
+  function delFoto() {
+    const b = document.getElementById('viewer-del');
+    if (!b.dataset.sure) { b.dataset.sure = '1'; b.textContent = 'Sicuro? Tocca ancora'; return; }
+    removeFoto(st.viewing);
+    closeViewer(); rerender(); refreshEditFotos();
+    toast('🗑️ Foto eliminata');
+  }
+
+  // ── Aggiungi a voce ───────────────────────────────────────────
+  // La trascrizione si accoda alla descrizione con data e ora; l'audio non si tiene
+  async function voce() {
+    if (st.voce) { st.voce.mr.stop(); return; }
+    if (!st.editing || st.rec) return;
+    if (!cfg.groqKey) { toast('⚠️ Imposta la Groq API key nelle impostazioni'); return; }
+    let stream;
+    try { stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false }); }
+    catch { toast('❌ Accesso microfono negato'); return; }
+    let opts = {};
+    for (const mt of ['audio/webm;codecs=opus','audio/webm','audio/ogg','']) {
+      if (!mt || MediaRecorder.isTypeSupported(mt)) { if (mt) opts.mimeType = mt; break; }
+    }
+    const mr = new MediaRecorder(stream, opts), chunks = [];
+    const v = st.voce = { mr, target: { ...st.editing }, creato: new Date().toISOString(), sec: 0 };
+    const show = t => { const b = document.getElementById('e-voce'); if (b) b.textContent = t; };
+    v.iv = setInterval(() => { v.sec++; show(`⏹️ Stop  ${Math.floor(v.sec/60)}:${pad2(v.sec%60)}`); }, 1000);
+    mr.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
+    mr.onstop = async () => {
+      clearInterval(v.iv);
+      stream.getTracks().forEach(t => t.stop());
+      st.voce = null;
+      show('⏳ Trascrivo…');
+      const mime = mr.mimeType || 'audio/webm';
+      const blob = new Blob(chunks, { type: mime });
+      try {
+        const tx = (await transcribe(blob, mime)).trim();
+        if (tx) { appendVoce(v.target, tx, v.creato); toast('🎙️ Aggiunto'); }
+        else toast('🤔 Non ho sentito niente');
+      } catch {
+        // Offline o Groq non raggiungibile: l'audio aspetta sul telefono e si trascrive al ritorno della rete
+        if (await recPut({ id: uid(), blob, mime, creato: v.creato, append: v.target }))
+          toast('💾 Registrato: il testo verrà aggiunto quando torna la rete', 4500);
+        else toast('❌ Trascrizione non riuscita');
+      }
+      show('🎙️ A voce');
+    };
+    mr.start(100);
+    show('⏹️ Stop  0:00');
+  }
+
+  // Salva subito sull'elemento; se la finestra Modifica è aperta il testo compare anche lì
+  function appendVoce(target, tx, quando) {
+    const it = findItem(target.tipo, target.id);
+    if (!it) return;
+    let d = new Date(quando || Date.now());
+    if (isNaN(d)) d = new Date();
+    const riga = `${pad2(d.getDate())}/${pad2(d.getMonth()+1)} ${pad2(d.getHours())}:${pad2(d.getMinutes())} — ${tx}`;
+    const join = s => (s.trim() ? s.replace(/\s+$/, '') + '\n\n' : '') + riga;
+    it.descrizione = join(it.descrizione || '');
+    enqueue('up', target.tipo, target.id);
+    const ta = document.getElementById('e-desc');
+    if (ta && st.editing?.id === target.id && document.getElementById('overlay').classList.contains('on'))
+      ta.value = join(ta.value);
+    rerender();
   }
 
   // ── Google Calendar (link precompilato, nessun accesso Google) ─
@@ -2874,12 +3199,15 @@ Regole:
   }
   function closeModal() {
     document.getElementById('overlay').classList.remove('on');
+    if (st.voce) st.voce.mr.stop();   // la trascrizione arriva comunque all'elemento
   }
   // Tocco fuori dalla scheda: se era una dettatura, l'audio resta tra quelle da elaborare
   function dismissModal() {
     closeModal();
     st.qRec = null; st.qFixed = null; st.queue = []; st.qIdx = 0; st.qSaved = 0;
     st.pick = { ctx: 'inline', q: '' };
+    setQFoto(null);
+    st.editing = null;
     renderPending();
   }
 
@@ -2962,7 +3290,9 @@ Regole:
         outbox.push({ op: 'del', tipo, id: it.id });
       }
     }
-    db={clienti:[],appointments:[],tasks:[],notes:[]}; save(); saveOutbox(); sync();
+    fdel.push(...db.allegati.map(a => a.nome)); saveFdel();
+    fotoAll().then(l => l.forEach(f => fotoDel(f.id)));
+    db={clienti:[],appointments:[],tasks:[],notes:[],allegati:[]}; save(); saveOutbox(); sync();
     closeModal(); rerender(); toast('🗑️ Dati eliminati');
   }
 
@@ -3020,6 +3350,9 @@ Regole:
     });
     setTimeout(preparePending, 3000);
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') sync(); });
+    // Ogni volta che compaiono nuove miniature (qualsiasi elenco o finestra) le riempie
+    new MutationObserver(fillThumbs).observe(document.body, { childList: true, subtree: true });
+    fillThumbs();
     if ('serviceWorker' in navigator)
       navigator.serviceWorker.register('./sw.js').catch(()=>{});
   }
@@ -3043,6 +3376,7 @@ Regole:
     anaSearch, anaPick, anaRefresh, anaUnlink,
     anaOpen, gooOpen, linkAll, linkConfirm,
     createSchede, skipSchede,
+    fotoPer, fotoMemo, onFoto, viewFoto, closeViewer, delFoto, voce,
     init,
   };
 })();
