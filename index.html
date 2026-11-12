@@ -439,6 +439,9 @@
     .ex-apt  { background: rgba(69,123,157,.2); color: var(--blue); }
     .ex-task { background: rgba(233,196,106,.2); color: var(--warn); }
     .ex-note { background: rgba(42,157,143,.2);  color: var(--ok);  }
+    .ex-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+    .ex-tabs .ex-type { margin: 0; border: none; font-family: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+    .ex-tabs .ex-type.off { background: var(--bg3); color: var(--dim); font-weight: 700; }
 
     /* ── Contacts ── */
     .citem {
@@ -794,7 +797,7 @@
     </div>
 
     <div style="padding:16px;color:var(--dim);font-size:11px;text-align:center">
-      MAYDAY v2.5 · Uso personale · Dati su Supabase, copia offline sul telefono
+      MAYDAY v2.5.1 · Uso personale · Dati su Supabase, copia offline sul telefono
     </div>
   </section>
 
@@ -1610,7 +1613,7 @@ const A = (() => {
     const head = img
       ? `Analizza questa FOTO ed estrai TUTTE le azioni e le informazioni utili che contiene.
 Può essere un biglietto da visita, un preventivo, un documento, una lavagna o un appunto scritto a mano.
-- Biglietto da visita: crea una nota con tutti i dati letti (nome, ditta, ruolo, telefono, email, indirizzo, sito) e compila cliente, cliente_azienda, cliente_localita, cliente_telefono, cliente_email
+- Biglietto da visita: crea UNA nota. Nella descrizione riporta TUTTI i dati letti, uno per riga con l'etichetta: nome, ditta, ruolo, ogni numero di telefono (Cell., Tel., Fax…) e ogni email ESATTAMENTE come sono scritti, indirizzo, sito. Compila anche cliente, cliente_azienda, cliente_localita, cliente_telefono (il cellulare se c'è, altrimenti il primo numero) e cliente_email (la prima email)
 - Preventivo o documento: una nota che riassume cosa contiene (chi, cosa, importi, date); se ci sono scadenze o cose da fare crea anche le task
 - Appunto a mano: trascrivilo e trattalo come una dettatura`
       : `Analizza questa dettatura vocale italiana ed estrai TUTTE le azioni che contiene.
@@ -1623,6 +1626,11 @@ Formato esatto:
 {"elementi":[{"tipo":"appuntamento"|"task"|"nota","cliente":"nome o stringa vuota","cliente_localita":"paese del cliente o stringa vuota","cliente_azienda":"ditta del cliente o stringa vuota","cliente_telefono":"telefono del cliente o stringa vuota","cliente_email":"email del cliente o stringa vuota","data":"YYYY-MM-DD o stringa vuota","ora":"HH:MM o stringa vuota","descrizione":"testo descrittivo conciso","scadenza":"YYYY-MM-DD o stringa vuota","priorita":"alta"|"media"|"bassa","luogo":"luogo o stringa vuota"}]}
 
 Regole:
+- PRIMA REGOLA, vale sopra tutte le altre: se chi parla dice esplicitamente che tipo vuole, usa quel tipo.
+  · "crea/fai/aggiungi una task", "ricordami di…" → "task"
+  · "salva/metti in una nota", "prendi nota", "fai una nota", "salva l'appunto" → UNA SOLA "nota" con tutto il contenuto, senza dividerlo in più elementi
+  · "fissa/segna/metti un appuntamento" → "appuntamento"
+  Togli la frase di comando dalla descrizione (es. "crea una task per Rossi: mandare il listino" → descrizione "Mandare il listino")
 - Crea UN elemento per OGNI azione distinta. Una dettatura può contenere sia un appuntamento sia una o più task: separale sempre.
 - appuntamento = incontro/visita/chiamata fissata con data o ora precisa (usa "data", "ora", "luogo")
 - task = qualcosa che devo fare: frasi con "devo", "ricordarmi di", "entro", "mandare", "chiamare", "preparare", "inviare" ecc. Metti la data limite in "scadenza" (non in "data")
@@ -1807,24 +1815,36 @@ Regole:
   }
 
   // ── Confirmation Modal ────────────────────────────────────────
-  async function showConfirmModal(transcription, ex) {
-    // Search contacts in background
-    let contacts = [];
-    if (ex.cliente) contacts = await searchContacts(ex.cliente);
-    st.contacts_pending = contacts;
+  // keep = cambio di tipo nella stessa finestra: cliente e contatti restano quelli già scelti
+  async function showConfirmModal(transcription, ex, keep) {
+    let contacts = st.contacts_pending;
+    if (!keep) {
+      // Search contacts in background
+      contacts = ex.cliente ? await searchContacts(ex.cliente) : [];
+      st.contacts_pending = contacts;
 
-    // Cliente: scheda fissata ("Registra per questo cliente") oppure riconoscimento dal nome
-    st.qEx = ex;
-    st.pick = { ctx: 'inline', q: '' };
-    if (st.qFixed && getCli(st.qFixed)) st.qCli = { id: st.qFixed };
-    else {
-      const m = matchCli(ex);
-      st.qCli = m.caso === 'sicuro' ? { id: m.list[0].c.id, auto: true } : { id: null, caso: m.caso, list: m.list };
+      // Cliente: scheda fissata ("Registra per questo cliente") oppure riconoscimento dal nome
+      st.qEx = ex;
+      st.pick = { ctx: 'inline', q: '' };
+      if (st.qFixed && getCli(st.qFixed)) st.qCli = { id: st.qFixed };
+      else {
+        const m = matchCli(ex);
+        st.qCli = m.caso === 'sicuro' ? { id: m.list[0].c.id, auto: true } : { id: null, caso: m.caso, list: m.list };
+      }
     }
 
     const tipo = ex.tipo || 'nota';
-    const tcls = { appuntamento:'ex-apt', task:'ex-task', nota:'ex-note' }[tipo] || 'ex-note';
-    const tlab = { appuntamento:'📅 Appuntamento', task:'✅ Task', nota:'📝 Nota' }[tipo] || '📝 Nota';
+    // Il tipo deciso da Gemini si cambia con un tocco
+    const tabs = [['appuntamento','ex-apt','📅 Appuntamento'], ['task','ex-task','✅ Task'], ['nota','ex-note','📝 Nota']]
+      .map(([t, cls, lab]) => `<button class="ex-type ${cls}${t === tipo ? '' : ' off'}" onclick="A.setTipo('${t}')">${lab}</button>`).join('');
+    // Telefono ed email letti (biglietto da visita): vanno nella scheda del cliente se lì mancano
+    const conHtml = st.qFoto || ex.cliente_telefono || ex.cliente_email ? `
+        <div class="row">
+          <div class="fg"><label class="flbl">📞 Telefono</label>
+            <input type="tel" class="finp" id="f-tel" value="${esc(ex.cliente_telefono||'')}"></div>
+          <div class="fg"><label class="flbl">✉️ Email</label>
+            <input type="email" class="finp" id="f-mail" value="${esc(ex.cliente_email||'')}"></div>
+        </div>` : '';
 
     let ctcHtml = '';
     if (contacts.length) {
@@ -1843,7 +1863,7 @@ Regole:
     let fields = '';
     if (tipo === 'appuntamento') {
       fields = `
-        ${cliField()}
+        ${cliField()}${conHtml}
         <div class="row">
           <div class="fg"><label class="flbl">Data</label>
             <input type="date" class="finp" id="f-data" value="${ex.data||''}"></div>
@@ -1856,7 +1876,7 @@ Regole:
           <textarea class="finp" id="f-desc">${esc(ex.descrizione||'')}</textarea></div>`;
     } else if (tipo === 'task') {
       fields = `
-        ${cliField()}
+        ${cliField()}${conHtml}
         <div class="fg"><label class="flbl">Cosa fare</label>
           <textarea class="finp" id="f-desc">${esc(ex.descrizione||'')}</textarea></div>
         <div class="row">
@@ -1871,7 +1891,7 @@ Regole:
         </div>`;
     } else {
       fields = `
-        ${cliField()}
+        ${cliField()}${conHtml}
         <div class="fg"><label class="flbl">Nota</label>
           <textarea class="finp" id="f-desc" style="min-height:90px">${esc(ex.descrizione||'')}</textarea></div>`;
     }
@@ -1885,7 +1905,7 @@ Regole:
 
     openModal(`
       ${counter}
-      <div class="ex-type ${tcls}">${tlab}</div>
+      <div class="ex-tabs">${tabs}</div>
       ${st.qFoto
         ? `<div class="flbl">Foto letta${st.qFoto.done ? '' : ' · verrà allegata a questo elemento'}</div>
            <img class="qfoto" src="${st.qFoto.url}" alt="">`
@@ -1917,7 +1937,18 @@ Regole:
   function saveEx(tipo) {
     const now = new Date().toISOString();
     const id  = uid();
+    const tel = document.getElementById('f-tel')  ? q('f-tel').trim()  : '';
+    const mail = document.getElementById('f-mail') ? q('f-mail').trim() : '';
+    // Nuova scheda: usa telefono ed email come corretti nella finestra
+    if (st.qCli?.nuovo) Object.assign(st.qCli.nuovo, tel ? { telefono: tel } : {}, mail ? { email: mail } : {});
     const cl  = resolvePick();
+    // Scheda esistente: completa solo i campi vuoti, non sovrascrive
+    const c = getCli(cl.id);
+    if (c && ((tel && !c.telefono) || (mail && !c.email))) {
+      if (tel && !c.telefono) c.telefono = tel;
+      if (mail && !c.email)   c.email = mail;
+      enqueue('up', 'cliente', c.id);
+    }
     if (tipo === 'appuntamento') {
       db.appointments.push({
         id, tipo,
@@ -1956,6 +1987,28 @@ Regole:
 
   // Passa al prossimo elemento della dettatura, oppure chiude
   function skipEx() { nextEx(); }
+
+  // Cambia il tipo nella finestra di conferma tenendo quello che è già scritto
+  function setTipo(t) {
+    const ex = st.qEx;
+    if (!ex || ex.tipo === t) return;
+    const val = id => document.getElementById(id) ? q(id) : null;
+    const v = { desc: val('f-desc'), data: val('f-data'), ora: val('f-ora'), luogo: val('f-luogo'),
+                scad: val('f-scad'), pri: val('f-pri'), tel: val('f-tel'), mail: val('f-mail') };
+    if (v.desc  !== null) ex.descrizione = v.desc;
+    if (v.data  !== null) ex.data = v.data;
+    if (v.ora   !== null) ex.ora = v.ora;
+    if (v.luogo !== null) ex.luogo = v.luogo;
+    if (v.scad  !== null) ex.scadenza = v.scad;
+    if (v.pri   !== null) ex.priorita = v.pri;
+    if (v.tel   !== null) ex.cliente_telefono = v.tel;
+    if (v.mail  !== null) ex.cliente_email = v.mail;
+    // La data passa da appuntamento a scadenza e viceversa
+    if (t === 'task' && !ex.scadenza && ex.data) ex.scadenza = ex.data;
+    if (t === 'appuntamento' && !ex.data && ex.scadenza) ex.data = ex.scadenza;
+    ex.tipo = t;
+    showConfirmModal(st.qTx, ex, true);
+  }
 
   function nextEx() {
     st.qIdx++;
@@ -3360,7 +3413,7 @@ Regole:
   return {
     go, toggleRec,
     fAppt, fTask, searchNotes,
-    pickContact, saveEx, skipEx,
+    pickContact, saveEx, skipEx, setTipo,
     editItem, saveEdit,
     delItem, confirmDel, rerender,
     toggleTask, addToCal,
