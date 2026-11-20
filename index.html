@@ -612,6 +612,65 @@
     #viewer.on { display: flex; }
     #viewer img { max-width: 100%; max-height: 78dvh; border-radius: 8px; }
     #viewer .btn-row { width: 100%; max-width: 420px; }
+
+    /* ── Registrazioni lunghe: archivio e lettura della trascrizione ── */
+    .txrow {
+      display: flex; align-items: center; gap: 10px; padding: 11px 12px; margin-bottom: 8px;
+      background: var(--bg2); border: 1px solid var(--border); border-radius: var(--r); cursor: pointer;
+    }
+    .txrow:active { background: var(--bg3); }
+    .txrow-ico { font-size: 22px; }
+    .txrow-tit { font-size: 16px; font-weight: 700; color: var(--text); }
+    .txrow-sub { font-size: 13px; color: var(--dim); }
+    .rbox { background: var(--bg3); border: 1px solid var(--border); border-radius: var(--r); padding: 11px 13px; margin-bottom: 12px; font-size: 15px; line-height: 1.45; }
+    #txview {
+      position: fixed; inset: 0; z-index: 300; display: none; flex-direction: column;
+      background: var(--bg2); padding: calc(10px + env(safe-area-inset-top, 0px)) 14px calc(12px + env(safe-area-inset-bottom, 0px));
+    }
+    #txview.on { display: flex; }
+    .txv-hd { display: flex; align-items: center; gap: 8px; }
+    .txv-tit { font-size: 18px; font-weight: 800; flex: 1; min-width: 0; }
+    .txv-sub { font-size: 14px; color: var(--dim); margin: 2px 0 10px 44px; }
+    .txv-find { display: flex; align-items: center; gap: 4px; margin-bottom: 8px; }
+    .txv-find .finp { flex: 1; }
+    .txv-n { font-size: 13px; color: var(--dim); min-width: 44px; text-align: center; }
+    .txv-body {
+      flex: 1; overflow-y: auto; white-space: pre-wrap; font-size: 16px; line-height: 1.55;
+      background: var(--bg3); border: 1px solid var(--border); border-radius: var(--r); padding: 12px 13px;
+    }
+    .txv-body mark { background: #ffe08a; color: inherit; border-radius: 3px; }
+    .txv-body mark.cur { background: var(--red); color: #fff; }
+    textarea.txv-body { width: 100%; font-family: inherit; resize: none; }
+    .txv-acts { margin-top: 10px; }
+
+    /* ── Esporta scheda cliente ── */
+    .chk { display: flex; align-items: center; gap: 10px; font-size: 16px; padding: 7px 0; }
+    .chk input { width: 22px; height: 22px; flex-shrink: 0; }
+    .btn-col { display: flex; flex-direction: column; gap: 9px; margin-top: 14px; }
+
+    /* Il PDF si fa con la stampa del telefono: si stampa solo #print-area */
+    #print-area { display: none; }
+    @media print {
+      @page { size: A4; margin: 14mm 12mm; }
+      html, body { background: #fff !important; height: auto !important; overflow: visible !important; }
+      #app, #bnav, #overlay, #viewer, #toast, #txview { display: none !important; }
+      #print-area { display: block; color: #000; font-size: 11pt; line-height: 1.4; }
+    }
+    #print-area .pr-name { font-size: 20pt; font-weight: 800; margin-bottom: 2px; }
+    #print-area .pr-sub  { font-size: 11pt; color: #333; }
+    #print-area .pr-gen  { font-size: 9pt; color: #666; margin-top: 6px; padding-bottom: 8px; border-bottom: 2px solid #FF8C00; }
+    #print-area .pr-sec  { font-size: 13pt; font-weight: 800; margin: 16px 0 6px; color: #E07A00; break-after: avoid; }
+    #print-area .pr-item { border-left: 4px solid #ccc; padding: 4px 0 6px 10px; margin-bottom: 9px; break-inside: avoid; }
+    #print-area .pr-item.apt  { border-color: #457b9d; }
+    #print-area .pr-item.task { border-color: #e9c46a; }
+    #print-area .pr-item.nota { border-color: #FF8C00; }
+    #print-area .pr-item.rec  { border-color: #666; }
+    #print-area .pr-hd   { font-weight: 700; font-size: 10.5pt; }
+    #print-area .pr-desc { white-space: pre-line; margin-top: 2px; }
+    #print-area .pr-fotos { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 5px; }
+    #print-area .pr-fotos img { width: 34mm; height: 34mm; object-fit: cover; border-radius: 4px; border: 1px solid #ddd; }
+    #print-area .pr-tx { white-space: pre-wrap; font-size: 9.5pt; color: #222; margin-top: 4px; }
+    #print-area .pr-empty { color: #666; font-style: italic; }
   </style>
 </head>
 <body>
@@ -638,13 +697,15 @@
 
       <div class="rec-timer" id="rec-timer"></div>
       <div class="waveform" id="waveform"></div>
-      <div style="display:flex;gap:9px">
-        <button class="btn btn-sec" id="btn-write" style="width:auto;padding:10px 26px" onclick="A.openWrite()">✍️  Scrivi</button>
-        <button class="btn btn-sec" id="btn-foto" style="width:auto;padding:10px 26px" onclick="A.fotoMemo()">📷  Foto</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center">
+        <button class="btn btn-sec" id="btn-write" style="width:auto;padding:10px 16px" onclick="A.openWrite()">✍️  Scrivi</button>
+        <button class="btn btn-sec" id="btn-foto" style="width:auto;padding:10px 16px" onclick="A.fotoMemo()">📷  Foto</button>
+        <button class="btn btn-sec" id="btn-audio" style="width:auto;padding:10px 16px" onclick="A.pickAudio()">🎧  Audio</button>
       </div>
     </div>
 
     <div id="pending"></div>
+    <div id="archivio"></div>
     <div class="sec-lbl">Ultimi elementi</div>
     <div id="recent"></div>
   </section>
@@ -797,7 +858,7 @@
     </div>
 
     <div style="padding:16px;color:var(--dim);font-size:11px;text-align:center">
-      MAYDAY v2.5.1 · Uso personale · Dati su Supabase, copia offline sul telefono
+      MAYDAY v2.6.0 · Uso personale · Dati su Supabase, copia offline sul telefono
     </div>
   </section>
 
@@ -822,6 +883,9 @@
   </button>
 </nav>
 
+<!-- AREA DI STAMPA: scheda cliente esportata in PDF -->
+<div id="print-area"></div>
+
 <!-- MODAL -->
 <div id="overlay" onclick="A.dismissModal()">
   <div class="sheet" onclick="event.stopPropagation()">
@@ -832,6 +896,23 @@
 
 <!-- FOTO: scelta del file (fotocamera o galleria) e visualizzazione a schermo intero -->
 <input type="file" id="foto-in" accept="image/*" style="display:none" onchange="A.onFoto(this)">
+<!-- REGISTRAZIONI LUNGHE: scelta del file audio e lettura della trascrizione completa -->
+<input type="file" id="audio-in" accept="audio/*,.m4a,.mp3,.wav,.ogg,.aac,.amr,.3gp,.flac,.webm" style="display:none" onchange="A.onAudio(this)">
+<div id="txview">
+  <div class="txv-hd">
+    <button class="icobtn" onclick="A.closeTx()" title="Chiudi">✕</button>
+    <div class="txv-tit" id="txv-tit"></div>
+  </div>
+  <div class="txv-sub" id="txv-sub"></div>
+  <div class="txv-find" id="txv-find">
+    <input type="search" class="finp" id="txv-q" placeholder="🔍  Cerca nella trascrizione…" oninput="A.txFind(this.value)">
+    <span class="txv-n" id="txv-n"></span>
+    <button class="icobtn" onclick="A.txNext(-1)" title="Precedente">▲</button>
+    <button class="icobtn" onclick="A.txNext(1)" title="Successivo">▼</button>
+  </div>
+  <div class="txv-body" id="txv-body"></div>
+  <div class="btn-row txv-acts" id="txv-acts"></div>
+</div>
 <div id="viewer" onclick="A.closeViewer()">
   <img id="viewer-img" alt="">
   <div class="btn-row" onclick="event.stopPropagation()">
@@ -883,13 +964,19 @@ const A = (() => {
     editing: null,  // elemento aperto in Modifica: { tipo, id }
     voce: null,     // registrazione "Aggiungi a voce" in corso
     viewing: null,  // id dell'allegato aperto a schermo intero
+    qTxId: null,    // trascrizione della registrazione lunga che si sta confermando
+    riun: null,     // file audio scelto, in attesa di "Avvia": { file, cid, modello, durata }
+    audioFor: null, // scheda cliente da cui si è scelto il file audio
+    tx: null,       // trascrizione aperta a schermo intero: { id, testo, hits, cur, editing }
   };
 
   // ── DB ───────────────────────────────────────────────────────
   // Copia locale dei dati (cache offline); la fonte principale è Supabase
-  let db = { clienti: [], appointments: [], tasks: [], notes: [], allegati: [] };
+  // trascrizioni: solo i dati leggeri (titolo, data, cliente…); il testo sta nell'archivio "tx" del telefono e su Supabase
+  let db = { clienti: [], appointments: [], tasks: [], notes: [], allegati: [], trascrizioni: [] };
   let outbox = [];  // operazioni da inviare a Supabase: { op:'up'|'del', tipo, id }
   let fdel = [];    // nomi delle foto da cancellare dallo Storage
+  let txOut = [];   // trascrizioni da inviare a Supabase: { op:'up'|'del', id, testo:bool }
 
   // ── Supabase ─────────────────────────────────────────────────
   // Chiave pubblica (publishable/anon): i dati sono protetti dalle policy RLS
@@ -922,11 +1009,14 @@ const A = (() => {
     try { const s = localStorage.getItem('md_cfg'); if (s) cfg = { ...cfg, ...JSON.parse(s) }; } catch{}
     try { const o = localStorage.getItem('md_outbox'); if (o) outbox = JSON.parse(o) || []; } catch{}
     try { const f = localStorage.getItem('md_fdel');   if (f) fdel   = JSON.parse(f) || []; } catch{}
+    try { const t = localStorage.getItem('md_txout');  if (t) txOut  = JSON.parse(t) || []; } catch{}
+    if (!Array.isArray(db.trascrizioni)) db.trascrizioni = [];
   }
   function save()       { localStorage.setItem('md_db',  JSON.stringify(db));  }
   function saveCfg()    { localStorage.setItem('md_cfg', JSON.stringify(cfg)); }
   function saveOutbox() { localStorage.setItem('md_outbox', JSON.stringify(outbox)); }
   function saveFdel()   { localStorage.setItem('md_fdel', JSON.stringify(fdel)); }
+  function saveTxOut()  { localStorage.setItem('md_txout', JSON.stringify(txOut)); }
   function uid() {
     if (crypto.randomUUID) return crypto.randomUUID();
     return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
@@ -1045,6 +1135,7 @@ const A = (() => {
       await flush();
       await pull();
       lastSync = new Date(); lastErr = '';
+      await syncTx();
       return true;
     } catch (e) {
       lastErr = e.message || String(e);
@@ -1116,6 +1207,7 @@ const A = (() => {
       if (!local) continue;
       if (i >= 0) list[i] = local; else list.push(local);
     }
+    fresh.trascrizioni = db.trascrizioni || [];   // si aggiornano a parte (syncTx)
     const before = JSON.stringify(db);
     db = fresh; save();
     if (JSON.stringify(db) !== before) rerender();
@@ -1217,9 +1309,10 @@ const A = (() => {
   function recDb() {
     return new Promise((res, rej) => {
       // v2: archivio "foto" (allegati scattati sul telefono, anche prima di essere caricati)
-      const r = indexedDB.open('mayday', 2);
+      // v3: archivio "tx" (testo delle trascrizioni lunghe). Versione e archivi uguali in sw.js
+      const r = indexedDB.open('mayday', 3);
       r.onupgradeneeded = () => {
-        for (const s of ['rec', 'foto'])
+        for (const s of ['rec', 'foto', 'tx'])
           if (!r.result.objectStoreNames.contains(s)) r.result.createObjectStore(s, { keyPath: 'id' });
       };
       r.onsuccess = () => res(r.result);
@@ -1242,6 +1335,9 @@ const A = (() => {
   const fotoDel = id => recTx('readwrite', s => s.delete(id), 'foto').catch(() => {});
   const fotoGet = id => recTx('readonly',  s => s.get(id), 'foto').catch(() => null);
   const fotoAll = () => recTx('readonly',  s => s.getAll(), 'foto').then(l => l || []).catch(() => []);
+  const txPut   = r  => recTx('readwrite', s => s.put(r), 'tx').then(() => true).catch(() => false);
+  const txGet   = id => recTx('readonly',  s => s.get(id), 'tx').catch(() => null);
+  const txDelL  = id => recTx('readwrite', s => s.delete(id), 'tx').catch(() => {});
 
   const isScritto = r => typeof r.testo === 'string';
   const isFoto    = r => !!r.foto;
@@ -1253,11 +1349,13 @@ const A = (() => {
     if (!el) return;
     const list = (await recAll()).filter(r => r.id !== st.qRec && isMemo(r));
     const n = list.length;
-    const nT = list.filter(isScritto).length, nF = list.filter(isFoto).length, nA = n - nT - nF;
+    const nT = list.filter(isScritto).length, nF = list.filter(isFoto).length, nR = list.filter(r => r.riunione).length;
+    const nA = n - nT - nF - nR;
     const pronti = list.filter(r => r.items?.length).length;
     const label = pronti === n
       ? `✅  ${n} memo ${n > 1 ? 'pronti' : 'pronto'} da confermare`
-      : [nA ? `🎙️ ${nA} ${nA > 1 ? 'registrazioni' : 'registrazione'}` : '',
+      : [nR ? `🎧 ${nR} ${nR > 1 ? 'registrazioni lunghe' : 'registrazione lunga'}` : '',
+         nA ? `🎙️ ${nA} ${nA > 1 ? 'registrazioni' : 'registrazione'}` : '',
          nT ? `✍️ ${nT} ${nT > 1 ? 'testi' : 'testo'}` : '',
          nF ? `📷 ${nF} foto` : ''].filter(Boolean).join(' e ') + ' da elaborare';
     el.innerHTML = n
@@ -1275,6 +1373,7 @@ const A = (() => {
     try {
       for (const r of await recAll()) {
         if (r.id === st.qRec || r.items?.length) continue;
+        if (r.riunione) continue;   // registrazione lunga: si elabora solo quando la apri (evita doppioni)
         try {
           if (!isMemo(r)) {
             if (!cfg.groqKey) continue;
@@ -1332,7 +1431,7 @@ const A = (() => {
       document.querySelectorAll(`#v-${view} .chip`).forEach((b,i) => b.classList.toggle('on', i === 0));
       if (view === 'agenda') st.fA = 'all'; else st.fT = 'all';
     }
-    if (view === 'home')   { renderRecent(); renderPending(); }
+    if (view === 'home')   { renderRecent(); renderPending(); renderArchivioBtn(); }
     if (view === 'agenda') renderAppts('all');
     if (view === 'task')   renderTasks('all');
     if (view === 'note')   renderNotes('');
@@ -1475,16 +1574,25 @@ const A = (() => {
 
   // Trascrive ed estrae; se qualcosa va storto la registrazione resta salvata per riprovare
   async function processRec(rec, kept) {
-    const scritto = isScritto(rec), foto = isFoto(rec);
+    const scritto = isScritto(rec), foto = isFoto(rec), riun = !!rec.riunione;
+    let lock = null;
     try {
-      const tx = rec.tx ?? (scritto ? rec.testo : foto ? '' : await transcribe(rec.blob, rec.mime));
-      const items = rec.items?.length ? rec.items : await extract(tx, rec.creato, foto ? rec.foto : null);
+      // Registrazione lunga: lo schermo resta acceso finché non è finita l'elaborazione
+      if (riun) lock = await navigator.wakeLock?.request('screen').catch(() => null);
+      const tx = rec.tx ?? (scritto ? rec.testo : foto ? '' : riun ? await trascriviLungo(rec) : await transcribe(rec.blob, rec.mime));
+      let items = rec.items;
+      if (!items?.length && riun) {
+        items = await riassumi(tx, rec);
+        if (!items[0]?._errore) { rec.items = items; if (kept) await recPut(rec); }
+      } else if (!items?.length) items = await extract(tx, rec.creato, foto ? rec.foto : null);
       const err = items[0]?._errore;
-      if (err === 'troncata') toast('⚠️ Gemini non ha completato la risposta. Ho messo la tua dettatura come nota: puoi cambiarla o riprovare.', 6000);
+      if (riun && err) toast('⚠️ Riassunto non riuscito: la trascrizione completa è salvata. Puoi rileggerla o riprovare dalla Home.', 6500);
+      else if (err === 'troncata') toast('⚠️ Gemini non ha completato la risposta. Ho messo la tua dettatura come nota: puoi cambiarla o riprovare.', 6000);
       else if (err) toast('⚠️ Gemini ha risposto in modo illeggibile. Ho messo la tua dettatura come nota: controlla i campi prima di salvare.', 6000);
       st.queue = items; st.qIdx = 0; st.qTx = tx; st.qSaved = 0; st.qRec = kept ? rec.id : null;
       st.qFixed = rec.cliente_id && getCli(rec.cliente_id) ? rec.cliente_id : null;
       st.qScritto = scritto;
+      st.qTxId = riun ? rec.txId || null : null;
       setQFoto(foto ? rec.foto : null);
       await showConfirmModal(tx, items[0]);
       return true;
@@ -1493,6 +1601,8 @@ const A = (() => {
       const cosa = scritto ? 'Testo conservato' : foto ? 'Foto conservata' : 'Registrazione conservata';
       toast(kept ? `💾 ${cosa} (${why}): lo trovi in Home` : '❌ ' + e.message, 6000);
       return false;
+    } finally {
+      lock?.release().catch(() => {});
     }
   }
 
@@ -1503,6 +1613,7 @@ const A = (() => {
     document.getElementById('rec-lbl').textContent = lbl;
     document.getElementById('rec-status').textContent = status;
     document.getElementById('btn-write').style.display = cls ? 'none' : '';
+    document.getElementById('btn-audio').style.display = cls ? 'none' : '';
   }
 
   function updateTimer() {
@@ -1541,8 +1652,10 @@ const A = (() => {
   }
 
   // ── Groq Whisper ─────────────────────────────────────────────
-  async function transcribe(blob, mime) {
-    const ext = mime.includes('ogg') ? 'ogg' : mime.includes('mp4') ? 'm4a' : 'webm';
+  async function transcribe(blob, mime, nome) {
+    const dalNome = String(nome || '').match(/\.(\w+)$/)?.[1]?.toLowerCase();
+    const ext = dalNome && GROQ_EXT.includes(dalNome) ? dalNome
+      : mime.includes('ogg') ? 'ogg' : mime.includes('mp4') ? 'm4a' : mime.includes('wav') ? 'wav' : mime.includes('mpeg') ? 'mp3' : 'webm';
     const fd = new FormData();
     fd.append('file', blob, `rec.${ext}`);
     fd.append('model', 'whisper-large-v3-turbo');
@@ -1560,6 +1673,577 @@ const A = (() => {
     }
     const j = await r.json();
     return j.text || '';
+  }
+
+  // ══ Registrazioni lunghe (sopralluoghi, colloqui, riunioni) ═══
+  // Il file arriva da "Condividi" (sw.js) o dal pulsante 🎧 Audio; viene trascritto (a pezzi se è
+  // grande), la trascrizione completa si salva subito, poi Gemini fa il riassunto da confermare.
+  const GROQ_EXT = ['flac','mp3','mp4','mpeg','mpga','m4a','ogg','wav','webm'];
+  const MAX_INTERO = 24000000;           // Groq accetta al massimo 25 MB per file: restiamo sotto
+  const PEZZO_SEC  = 600;                // pezzi da 10 minuti (16 kHz mono ≈ 19 MB)
+  const MODELLI = {
+    auto:        { nome: '🤖 Automatico', hint: 'Gemini capisce da solo se è un sopralluogo, un colloquio o una riunione.' },
+    sopralluogo: { nome: '🏡 Sopralluogo', hint: 'Cliente e luogo, richieste, misure, prodotti, prezzi detti, prossimi passi.' },
+    colloquio:   { nome: '🤝 Colloquio',   hint: 'Punti focali, punti di forza, dubbi, impressione generale, cose da verificare.' },
+    riunione:    { nome: '👥 Riunione',    hint: 'Presenti, argomenti, decisioni prese, cose da fare con il responsabile.' },
+  };
+
+  function fmtDurata(sec) {
+    if (!sec || !isFinite(sec)) return '';
+    sec = Math.round(sec);
+    if (sec < 60) return sec + ' s';
+    const h = Math.floor(sec / 3600), m = Math.round((sec % 3600) / 60);
+    return h ? `${h} h ${String(m).padStart(2, '0')} min` : `${m} min`;
+  }
+  const fmtMb = b => (b / 1048576).toFixed(b < 10485760 ? 1 : 0).replace('.', ',') + ' MB';
+
+  // Durata letta dalle informazioni del file (senza decodificarlo tutto)
+  function durataAudio(blob) {
+    return new Promise(res => {
+      const a = new Audio(), u = URL.createObjectURL(blob);
+      const fine = d => { URL.revokeObjectURL(u); res(d && isFinite(d) ? d : null); };
+      a.preload = 'metadata';
+      a.onloadedmetadata = () => fine(a.duration);
+      a.onerror = () => fine(null);
+      setTimeout(() => fine(null), 6000);
+      a.src = u;
+    });
+  }
+
+  function statoRec(msg) {
+    document.getElementById('rec-status').textContent = msg;
+    if (st.view !== 'home') toast(msg, 3000);
+  }
+
+  // ── Scelta del file: pulsante 🎧 Audio (Home o scheda cliente) ──
+  function pickAudio(cid) {
+    if (st.rec || st.busy) { toast('⏳ Attendi la fine dell\'elaborazione in corso'); return; }
+    st.audioFor = getCli(cid) ? cid : null;
+    const i = document.getElementById('audio-in'); i.value = ''; i.click();
+  }
+  function onAudio(inp) {
+    const file = inp.files?.[0];
+    if (!file) return;
+    openRiunione(file, st.audioFor);
+    st.audioFor = null;
+  }
+  function openRiunione(file, cid) {
+    st.riun = { file, cid, modello: 'auto', durata: null };
+    const c = getCli(cid);
+    openModal(`
+      <div class="sheet-title">🎧 Riassumi registrazione</div>
+      <div class="rbox">📁 ${esc(file.name || 'Registrazione')}<br><span class="hint" id="r-info">${fmtMb(file.size)}</span></div>
+      ${c ? `<div class="flbl" style="font-size:15px">Cliente: 👤 ${esc(c.nome)}</div>` : ''}
+      <div class="flbl">Tipo di riassunto</div>
+      <div style="display:flex;flex-wrap:wrap;gap:7px" id="r-mod">
+        ${Object.entries(MODELLI).map(([k, m]) => `<button class="chip${k === 'auto' ? ' on' : ''}" data-m="${k}" onclick="A.setModello('${k}')">${m.nome}</button>`).join('')}
+      </div>
+      <div class="hint" id="r-hint" style="margin-bottom:12px">${MODELLI.auto.hint}</div>
+      <div class="fg"><label class="flbl">Titolo (facoltativo)</label>
+        <input type="text" class="finp" id="r-tit" placeholder="Es. Sopralluogo giardino Rossi"></div>
+      <div class="btn-row">
+        <button class="btn btn-sec" onclick="A.closeModal()">Annulla</button>
+        <button class="btn btn-ok" onclick="A.avviaRiunione()">▶  Avvia</button>
+      </div>`);
+    durataAudio(file).then(d => {
+      if (st.riun?.file !== file) return;
+      st.riun.durata = d;
+      const el = document.getElementById('r-info');
+      if (el) el.textContent = [fmtMb(file.size), fmtDurata(d)].filter(Boolean).join(' · ');
+    });
+  }
+  function setModello(k) {
+    if (!st.riun || !MODELLI[k]) return;
+    st.riun.modello = k;
+    document.querySelectorAll('#r-mod .chip').forEach(b => b.classList.toggle('on', b.dataset.m === k));
+    document.getElementById('r-hint').textContent = MODELLI[k].hint;
+  }
+  function avviaRiunione() {
+    const r = st.riun;
+    if (!r) return;
+    st.riun = null;
+    const titolo = q('r-tit').trim();
+    closeModal();
+    elaboraRiunione({
+      id: uid(), blob: r.file, mime: r.file.type || '', nome: r.file.name || '',
+      creato: new Date(r.file.lastModified || Date.now()).toISOString(),
+      riunione: { modello: r.modello }, titolo, cliente_id: r.cid || null, durata: r.durata,
+    });
+  }
+
+  // File condivisi dal Registratore: si elabora subito l'ultimo arrivato, gli altri restano in Home
+  async function processCondivisi() {
+    if (st.busy || st.rec) return;
+    const list = (await recAll()).filter(r => r.riunione && r.condiviso && r.tx == null && !r.items?.length)
+      .sort((a, b) => (b.ricevuto || 0) - (a.ricevuto || 0));
+    if (!list.length) { renderPending(); return; }
+    go('home');
+    toast('🎧 Registrazione ricevuta: la trascrivo e la riassumo', 3500);
+    const rec = list[0];
+    delete rec.condiviso;   // da ora è una normale registrazione in attesa
+    await recPut(rec);
+    elaboraRiunione(rec, true);
+  }
+
+  async function elaboraRiunione(rec, giaSalvata) {
+    if (st.busy || st.rec) { toast('⏳ Attendi la fine dell\'elaborazione in corso'); return; }
+    if (!cfg.groqKey) { toast('⚠️ Imposta la Groq API key nelle impostazioni'); go('cfg'); return; }
+    st.busy = true;
+    go('home');
+    setRecUI('proc', '⏳', 'ANALISI', 'Salvo la registrazione…');
+    const kept = giaSalvata || await recPut(rec);
+    if (!kept) toast('⚠️ Non riesco a salvare il file sul telefono: lo elaboro comunque', 4000);
+    await processRec(rec, kept);
+    setRecUI('', '🎙️', 'REGISTRA', 'Tocca per registrare');
+    st.busy = false;
+    renderPending();
+  }
+
+  // ── Trascrizione: intera se il file è piccolo, altrimenti a pezzi da 10 minuti ──
+  async function trascriviLungo(rec) {
+    if (!cfg.groqKey) throw new Error('manca la Groq API key');
+    if (rec.durata == null) rec.durata = await durataAudio(rec.blob);
+    const ext = String(rec.nome || '').match(/\.(\w+)$/)?.[1]?.toLowerCase();
+    const intero = rec.blob.size <= MAX_INTERO && (!ext || GROQ_EXT.includes(ext));
+    let testo;
+    if (intero) {
+      statoRec('Trascrivo la registrazione' + (rec.durata ? ` (${fmtDurata(rec.durata)})` : '') + '…');
+      testo = await conRiprova(() => transcribe(rec.blob, rec.mime || '', rec.nome));
+    } else {
+      statoRec('Preparo l\'audio (file grande)…');
+      const pcm = await decodifica16k(rec.blob);
+      if (!rec.durata) rec.durata = pcm.length / 16000;
+      const lung = PEZZO_SEC * 16000, n = Math.ceil(pcm.length / lung);
+      if (!Array.isArray(rec.parti) || rec.parti.length !== n) rec.parti = new Array(n).fill(null);
+      for (let i = 0; i < n; i++) {
+        if (typeof rec.parti[i] === 'string') continue;   // pezzo già fatto in un tentativo precedente
+        statoRec(`Trascrivo il pezzo ${i + 1} di ${n}…`);
+        const wav = wavDa(pcm.subarray(i * lung, (i + 1) * lung), 16000);
+        rec.parti[i] = (await conRiprova(() => transcribe(wav, 'audio/wav', `pezzo${i + 1}.wav`))).trim();
+        await recPut(rec);
+      }
+      testo = rec.parti.join(' ');
+    }
+    testo = String(testo || '').trim();
+    if (!testo) throw new Error('nessun parlato riconosciuto nella registrazione');
+    rec.tx = testo;
+    delete rec.parti;
+    await saveTrascrizione(rec);   // la trascrizione completa è al sicuro prima del riassunto
+    await recPut(rec);
+    return testo;
+  }
+
+  // Limite di Groq raggiunto (429): aspetta e riprova, al massimo 3 volte
+  async function conRiprova(fn) {
+    for (let i = 0; ; i++) {
+      try { return await fn(); }
+      catch (e) {
+        if (i >= 3 || !/^Groq 429/.test(e.message)) throw e;
+        statoRec(`Limite di Groq raggiunto: riprovo tra ${20 * (i + 1)} secondi…`);
+        await new Promise(r => setTimeout(r, 20000 * (i + 1)));
+      }
+    }
+  }
+
+  // Decodifica tutto il file a 16 kHz mono (la qualità che usa Whisper)
+  async function decodifica16k(blob) {
+    const ctx = new OfflineAudioContext(1, 1, 16000);
+    let ab;
+    try { ab = await ctx.decodeAudioData(await blob.arrayBuffer()); }
+    catch { throw new Error('formato audio non leggibile dal telefono'); }
+    if (ab.numberOfChannels === 1) return ab.getChannelData(0);
+    const n = ab.length, k = ab.numberOfChannels, out = new Float32Array(n);
+    for (let c = 0; c < k; c++) { const d = ab.getChannelData(c); for (let i = 0; i < n; i++) out[i] += d[i] / k; }
+    return out;
+  }
+
+  // WAV 16 bit mono da campioni float
+  function wavDa(f32, sr) {
+    const buf = new ArrayBuffer(44 + f32.length * 2), v = new DataView(buf);
+    const w = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+    w(0, 'RIFF'); v.setUint32(4, 36 + f32.length * 2, true); w(8, 'WAVE');
+    w(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+    v.setUint32(24, sr, true); v.setUint32(28, sr * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+    w(36, 'data'); v.setUint32(40, f32.length * 2, true);
+    for (let i = 0, o = 44; i < f32.length; i++, o += 2) {
+      const x = Math.max(-1, Math.min(1, f32[i]));
+      v.setInt16(o, x < 0 ? x * 0x8000 : x * 0x7fff, true);
+    }
+    return new Blob([buf], { type: 'audio/wav' });
+  }
+
+  // ── Riassunto con Gemini ──────────────────────────────────────
+  const RIASSUNTO_SCHEMA = {
+    type: 'OBJECT',
+    properties: {
+      titolo:           { type: 'STRING' },
+      tipo_incontro:    { type: 'STRING', enum: ['sopralluogo','colloquio','riunione'] },
+      cliente:          { type: 'STRING' },
+      cliente_localita: { type: 'STRING' },
+      cliente_azienda:  { type: 'STRING' },
+      cliente_telefono: { type: 'STRING' },
+      cliente_email:    { type: 'STRING' },
+      punti_importanti: { type: 'ARRAY', items: { type: 'STRING' } },
+      riassunto:        { type: 'STRING' },
+      cose_da_fare: { type: 'ARRAY', items: { type: 'OBJECT', properties: {
+        descrizione: { type: 'STRING' }, scadenza: { type: 'STRING' },
+        priorita: { type: 'STRING', enum: ['alta','media','bassa'] } }, required: ['descrizione'] } },
+      appuntamenti: { type: 'ARRAY', items: { type: 'OBJECT', properties: {
+        descrizione: { type: 'STRING' }, data: { type: 'STRING' }, ora: { type: 'STRING' }, luogo: { type: 'STRING' } },
+        required: ['descrizione'] } },
+    },
+    required: ['titolo','tipo_incontro','riassunto'],
+  };
+  const GUIDE = {
+    sopralluogo: `SOPRALLUOGO / VISITA A UN CLIENTE. Sezioni del riassunto: CLIENTE E LUOGO, RICHIESTE DEL CLIENTE, MISURE E DATI TECNICI, PRODOTTI E SOLUZIONI DISCUSSE, PREZZI E CONDIZIONI DETTI, DUBBI O OBIEZIONI DEL CLIENTE, PROSSIMI PASSI.`,
+    colloquio:   `COLLOQUIO (di lavoro o conoscitivo). Sezioni del riassunto: PUNTI FOCALI, PUNTI DI FORZA, DUBBI O CRITICITÀ, IMPRESSIONE GENERALE, COSE DA VERIFICARE.`,
+    riunione:    `RIUNIONE. Sezioni del riassunto: PRESENTI (solo se nominati), ARGOMENTI TRATTATI, DECISIONI PRESE, COSE DA FARE (con chi se ne occupa).`,
+  };
+
+  async function riassumi(tx, rec) {
+    const modello = MODELLI[rec.riunione?.modello] ? rec.riunione.modello : 'auto';
+    const session = !cfg.geminiKey && sb ? (await sb.auth.getSession()).data.session : null;
+    const durata = fmtDurata(rec.durata);
+    const giorno = dayOfIso(rec.creato) || localToday();
+    const fallback = errore => {
+      const it = normalizeExtraction({ tipo: 'nota', descrizione:
+        `🎙️ ${rec.titolo || 'Registrazione'}\n${[fmtFull(giorno), durata].filter(Boolean).join(' · ')}\n\n` +
+        'Riassunto non riuscito: la trascrizione completa è salvata (pulsante "📄 Trascrizione completa").' });
+      it._errore = errore;
+      return [it];
+    };
+    if (!cfg.geminiKey && !session) return fallback('nessun collegamento a Gemini');
+
+    const d = new Date(giorno + 'T12:00:00');
+    const weekday = d.toLocaleDateString('it-IT', { weekday: 'long' });
+    const guida = modello === 'auto'
+      ? `Capisci tu che tipo di incontro è e usa la struttura adatta:\n- ${GUIDE.sopralluogo}\n- ${GUIDE.colloquio}\n- ${GUIDE.riunione}`
+      : `Il tipo di incontro è: ${GUIDE[modello]}\nIn "tipo_incontro" metti "${modello}".`;
+    const prompt = `Questa è la trascrizione automatica (Whisper) di una registrazione fatta con il telefono da un tecnico-commerciale
+che vende e installa macchine da giardino, robot rasaerba e impianti antizanzare.
+La registrazione è del ${giorno} (${weekday})${durata ? `, dura ${durata}` : ''}${rec.titolo ? `, titolo dato da chi registra: "${rec.titolo}"` : ''}.
+
+${guida}
+
+Regole:
+- Scrivi in italiano. Si può parlare anche in DIALETTO VENETO: riporta il senso in italiano corretto.
+- La trascrizione può avere errori di riconoscimento: interpreta parole storpiate dal contesto, ma non inventare fatti, numeri o nomi.
+- Se chi registra dice "punto importante" (o simili, es. "questo è importante", "segnati questo"), quei passaggi vanno in "punti_importanti" e devono comparire anche nel riassunto.
+- "riassunto": testo semplice (NIENTE markdown, niente asterischi o #). Ogni sezione inizia con il titolo in MAIUSCOLO su una riga, poi i punti uno per riga preceduti da "• ". Salta le sezioni di cui non si è parlato. Riporta misure, quantità, prezzi e modelli esattamente come detti.
+- "titolo": breve (max 8 parole), es. "Sopralluogo giardino Rossi a Treviso".
+- "cliente": nome della persona o ditta cliente se è chiaro dalla registrazione, senza titoli (sig., dott.); altrimenti stringa vuota. Compila località, azienda, telefono ed email del cliente solo se detti.
+- "cose_da_fare": solo azioni concrete emerse (preventivi da mandare, materiale da ordinare, richiamate…). Scadenza in YYYY-MM-DD se detta, calcolando le date relative dal giorno della registrazione. Priorità "alta" se urgente.
+- "appuntamenti": solo incontri o interventi fissati con data o ora. Data YYYY-MM-DD, ora HH:MM, altrimenti stringa vuota.
+- Rispondi SOLO con JSON puro.
+
+TRASCRIZIONE (tra <<< e >>>):
+<<<
+${tx}
+>>>`;
+
+    statoRec('Preparo il riassunto…');
+    const model = 'gemini-3-flash-preview';
+    const call = gen => {
+      const body = { contents: [{ parts: [{ text: prompt }] }], generationConfig: gen };
+      if (cfg.geminiKey) return fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${cfg.geminiKey}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+      });
+      return fetch(`${SB_URL}/functions/v1/gemini-proxy`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: SB_KEY, Authorization: 'Bearer ' + session.access_token },
+        body: JSON.stringify({ model, payload: body }),
+      });
+    };
+    const base = { temperature: 0.2, maxOutputTokens: 8192, responseMimeType: 'application/json' };
+    let r;
+    try {
+      r = await call({ ...base, responseSchema: RIASSUNTO_SCHEMA, thinkingConfig: { thinkingLevel: 'low' } });
+      if (r.status === 400) r = await call(base);
+    } catch { return fallback('rete'); }
+    if (!r.ok) return fallback('Gemini ' + r.status);
+    const j = await r.json().catch(() => null);
+    const cand = j?.candidates?.[0];
+    if (cand?.finishReason === 'MAX_TOKENS') return fallback('troncata');
+    const raw = (cand?.content?.parts || []).filter(p => p.text && !p.thought).map(p => p.text).join('');
+    const o = parseGeminiJson(raw)[0];
+    if (!o || !o.riassunto) return fallback('illeggibile');
+
+    const tipo = MODELLI[o.tipo_incontro] ? o.tipo_incontro : (modello !== 'auto' ? modello : 'auto');
+    const titolo = rec.titolo || String(o.titolo || '').trim() || 'Registrazione';
+    // La trascrizione prende il titolo e il tipo trovati da Gemini (se non li hai scelti tu)
+    const t = txMeta(rec.txId);
+    if (t && (t.titolo !== titolo || t.modello !== tipo)) { t.titolo = titolo; t.modello = tipo; txEnqueue('up', t.id, false); }
+
+    const cli = {
+      cliente: o.cliente, cliente_localita: o.cliente_localita, cliente_azienda: o.cliente_azienda,
+      cliente_telefono: o.cliente_telefono, cliente_email: o.cliente_email,
+    };
+    const punti = (Array.isArray(o.punti_importanti) ? o.punti_importanti : []).map(String).filter(Boolean);
+    const nota = normalizeExtraction({ tipo: 'nota', ...cli, descrizione: [
+      `🎙️ ${titolo}`,
+      [MODELLI[tipo]?.nome.replace('🤖 Automatico', ''), fmtFull(giorno), durata].filter(Boolean).join(' · '),
+      punti.length ? '\n⭐ PUNTI IMPORTANTI\n' + punti.map(p => '• ' + p).join('\n') : '',
+      '\n' + String(o.riassunto).trim(),
+    ].filter(Boolean).join('\n') });
+    const apts = (Array.isArray(o.appuntamenti) ? o.appuntamenti : []).filter(a => a?.descrizione)
+      .map(a => normalizeExtraction({ tipo: 'appuntamento', ...cli, ...a }));
+    const tasks = (Array.isArray(o.cose_da_fare) ? o.cose_da_fare : []).filter(a => a?.descrizione)
+      .map(a => normalizeExtraction({ tipo: 'task', ...cli, ...a }));
+    return [nota, ...apts, ...tasks];
+  }
+
+  // ── Trascrizioni complete: archivio, sincronizzazione, lettura ──
+  const TX_TABLE = 'mayday_trascrizioni';
+  const TX_META  = 'id,titolo,modello,durata_sec,cliente_id,nota_id,creato,aggiornato';
+  const txMeta   = id  => (db.trascrizioni || []).find(t => t.id === id);
+  const txOfNota = nid => (db.trascrizioni || []).find(t => t.nota_id === nid);
+  const txOfCli  = cid => (db.trascrizioni || []).filter(t => t.cliente_id === cid)
+    .sort((a, b) => (b.creato || '').localeCompare(a.creato || ''));
+
+  // Mette in coda l'invio a Supabase (testo=true: va inviato anche il testo, non solo titolo/collegamenti)
+  function txEnqueue(op, id, testo) {
+    const prev = txOut.find(o => o.id === id);
+    txOut = txOut.filter(o => o.id !== id);
+    if (op === 'del') txOut.push({ op, id });
+    else {
+      txOut.push({ op, id, testo: !!testo || (prev?.op === 'up' && !!prev.testo) });
+      const t = txMeta(id); if (t) t.aggiornato = new Date().toISOString();
+    }
+    saveTxOut(); save(); sync();
+  }
+
+  async function saveTrascrizione(rec) {
+    if (!rec.txId) rec.txId = uid();
+    if (!txMeta(rec.txId)) db.trascrizioni.push({
+      id: rec.txId,
+      titolo: rec.titolo || 'Registrazione del ' + fmtFull(dayOfIso(rec.creato)),
+      modello: MODELLI[rec.riunione?.modello] ? rec.riunione.modello : 'auto',
+      durata_sec: rec.durata ? Math.round(rec.durata) : null,
+      cliente_id: getCli(rec.cliente_id) ? rec.cliente_id : null,
+      nota_id: null,
+      creato: isoTs(rec.creato),
+    });
+    await txPut({ id: rec.txId, testo: rec.tx, up: false });
+    txEnqueue('up', rec.txId, true);
+    renderArchivioBtn();
+  }
+
+  // Collega la trascrizione alla nota del riassunto e al cliente scelti nella conferma
+  function linkTx(txId, tipo, itemId, cliId) {
+    const t = txMeta(txId);
+    if (!t) return;
+    let ch = false;
+    if (cliId && !t.cliente_id) { t.cliente_id = cliId; ch = true; }
+    if (tipo === 'nota' && !t.nota_id) { t.nota_id = itemId; ch = true; }
+    if (ch) txEnqueue('up', txId, false);
+  }
+
+  function delTx(id) {
+    db.trascrizioni = (db.trascrizioni || []).filter(t => t.id !== id);
+    txDelL(id);
+    txEnqueue('del', id);
+  }
+
+  // Testo completo: copia sul telefono, altrimenti lo scarica da Supabase (e lo tiene sul telefono)
+  async function getTxTesto(id) {
+    const l = await txGet(id);
+    if (l && typeof l.testo === 'string') return l.testo;
+    if (!sb || !user || !navigator.onLine) return null;
+    const { data, error } = await sb.from(TX_TABLE).select('testo').eq('id', id).maybeSingle();
+    if (error || !data) return null;
+    await txPut({ id, testo: data.testo || '', up: true });
+    return data.testo || '';
+  }
+
+  // Invia la coda e scarica i dati leggeri; un errore qui non blocca il resto della sincronizzazione
+  async function syncTx() {
+    try {
+      for (const o of [...txOut]) {
+        if (o.op === 'del') {
+          const { error } = await sb.from(TX_TABLE).delete().eq('id', o.id);
+          if (error) throw error;
+        } else {
+          const t = txMeta(o.id);
+          if (t) {
+            const row = {
+              id: t.id, user_id: user.id, titolo: t.titolo || '', modello: MODELLI[t.modello] ? t.modello : 'auto',
+              durata_sec: Number.isFinite(t.durata_sec) ? t.durata_sec : null,
+              cliente_id: isUuid(t.cliente_id) ? t.cliente_id : null, nota_id: isUuid(t.nota_id) ? t.nota_id : null,
+              creato: isoTs(t.creato), aggiornato: isoTs(t.aggiornato || t.creato),
+            };
+            let l = null;
+            if (o.testo) { l = await txGet(o.id); if (l) row.testo = l.testo || ''; }
+            const { error } = await sb.from(TX_TABLE).upsert(row, { onConflict: 'id' });
+            if (error) throw error;
+            if (l) { l.up = true; await txPut(l); }
+          }
+        }
+        txOut = txOut.filter(x => x !== o); saveTxOut();
+      }
+      const rows = [];
+      for (let from = 0; ; from += 1000) {
+        const { data, error } = await sb.from(TX_TABLE).select(TX_META).order('id').range(from, from + 999);
+        if (error) throw error;
+        rows.push(...data);
+        if (data.length < 1000) break;
+      }
+      const list = rows.map(r => ({
+        id: r.id, titolo: r.titolo || '', modello: r.modello || 'auto', durata_sec: r.durata_sec ?? null,
+        cliente_id: r.cliente_id || null, nota_id: r.nota_id || null, creato: isoTs(r.creato), aggiornato: isoTs(r.aggiornato),
+      }));
+      for (const o of txOut) {   // le modifiche ancora in coda prevalgono
+        const i = list.findIndex(x => x.id === o.id);
+        if (o.op === 'del') { if (i >= 0) list.splice(i, 1); continue; }
+        const local = txMeta(o.id);
+        if (!local) continue;
+        if (i >= 0) list[i] = local; else list.push(local);
+      }
+      const before = JSON.stringify(db.trascrizioni);
+      db.trascrizioni = list; save();
+      if (JSON.stringify(list) !== before) rerender();
+    } catch (e) {
+      lastErr = 'trascrizioni: ' + (e.message || String(e));
+    }
+  }
+
+  // ── Archivio registrazioni (Home) ──────────────────────────────
+  function txRowHtml(t) {
+    const c = getCli(t.cliente_id);
+    const sub = [fmtFull(dayOfIso(t.creato)), fmtDurata(t.durata_sec), st.view !== 'cliente' && c ? '👤 ' + c.nome : '']
+      .filter(Boolean).join(' · ');
+    return `<div class="txrow" onclick="A.openTx('${t.id}')">
+      <span class="txrow-ico">🎙️</span>
+      <div style="min-width:0;flex:1"><div class="txrow-tit">${esc(t.titolo || 'Registrazione')}</div>
+        <div class="txrow-sub">${esc(sub)}</div></div>
+      <span style="color:var(--dim)">›</span>
+    </div>`;
+  }
+  function renderArchivioBtn() {
+    const el = document.getElementById('archivio');
+    if (!el) return;
+    const n = (db.trascrizioni || []).length;
+    el.innerHTML = n ? `<div style="padding:0 12px 8px"><button class="btn btn-sec" onclick="A.openArchivio()">📚  Registrazioni trascritte (${n})</button></div>` : '';
+  }
+  function openArchivio() {
+    openModal(`
+      <div class="sheet-title">📚 Registrazioni trascritte</div>
+      <input type="search" class="finp" id="arc-q" placeholder="🔍  Cerca titolo o cliente…" oninput="A.renderArchivio()" style="margin-bottom:10px">
+      <div id="arc-list"></div>`);
+    renderArchivio();
+  }
+  function renderArchivio() {
+    const el = document.getElementById('arc-list');
+    if (!el) return;
+    const qv = normName(q('arc-q'));
+    const list = [...(db.trascrizioni || [])].sort((a, b) => (b.creato || '').localeCompare(a.creato || ''))
+      .filter(t => !qv || normName(t.titolo + ' ' + (getCli(t.cliente_id)?.nome || '')).includes(qv));
+    el.innerHTML = list.length ? list.map(txRowHtml).join('')
+      : `<div class="empty" style="padding:20px"><div class="empty-txt">Nessuna registrazione${qv ? ' trovata' : ''}</div></div>`;
+  }
+
+  // Riquadro nella finestra di conferma (al posto del testo intero, che può essere lunghissimo)
+  function rboxHtml(txId) {
+    const t = txMeta(txId);
+    return `<div class="flbl">Registrazione trascritta</div>
+      <div class="rbox">🎙️ ${esc(t?.titolo || 'Registrazione')}${t?.durata_sec ? ' · ' + fmtDurata(t.durata_sec) : ''}<br>
+        <span class="hint">La trascrizione completa è salvata e resta collegata alla nota.</span>
+        <button class="btn btn-sec" style="margin-top:8px" onclick="A.openTx('${txId}')">📄  Leggi la trascrizione completa</button>
+      </div>`;
+  }
+
+  // ── Lettura a schermo intero: cerca, copia, correggi, elimina ──
+  async function openTx(id) {
+    const t = txMeta(id);
+    if (!t) { toast('⚠️ Trascrizione non trovata'); return; }
+    st.tx = { id, testo: null, hits: [], cur: -1, editing: false };
+    document.getElementById('txv-tit').textContent = t.titolo || 'Registrazione';
+    const c = getCli(t.cliente_id);
+    document.getElementById('txv-sub').textContent = [MODELLI[t.modello]?.nome, fmtFull(dayOfIso(t.creato)),
+      fmtDurata(t.durata_sec), c ? '👤 ' + c.nome : ''].filter(Boolean).join(' · ');
+    document.getElementById('txv-q').value = '';
+    document.getElementById('txv-n').textContent = '';
+    document.getElementById('txv-body').textContent = '⏳ Carico la trascrizione…';
+    txActs();
+    document.getElementById('txview').classList.add('on');
+    const testo = await getTxTesto(id);
+    if (st.tx?.id !== id) return;
+    st.tx.testo = testo;
+    document.getElementById('txv-body').textContent = testo ?? '⚠️ Testo non disponibile: serve la connessione per scaricarlo.';
+  }
+  function closeTx() { document.getElementById('txview').classList.remove('on'); st.tx = null; }
+  function txActs(conferma) {
+    const el = document.getElementById('txv-acts');
+    if (st.tx?.editing) {
+      el.innerHTML = `<button class="btn btn-sec" onclick="A.txEdit(false)">Annulla</button>
+        <button class="btn btn-ok" onclick="A.txSave()">✓ Salva</button>`;
+      return;
+    }
+    el.innerHTML = `<button class="btn btn-sec" onclick="A.txCopy()">📋 Copia</button>
+      <button class="btn btn-sec" onclick="A.txEdit(true)">✏️ Correggi</button>
+      <button class="btn" style="background:var(--red);color:#fff;flex:1" onclick="A.txDel()">${conferma ? 'Sicuro? Tocca ancora' : '🗑️ Elimina'}</button>`;
+    st.txDelSure = !!conferma;
+  }
+  function txFind(qv) {
+    const s0 = st.tx;
+    if (!s0 || s0.testo == null || s0.editing) return;
+    const body = document.getElementById('txv-body');
+    const needle = qv.trim().toLowerCase();
+    if (needle.length < 2) { body.textContent = s0.testo; document.getElementById('txv-n').textContent = ''; s0.hits = []; return; }
+    const low = s0.testo.toLowerCase();
+    let html = '', from = 0, n = 0;
+    for (let i = low.indexOf(needle); i >= 0; i = low.indexOf(needle, i + needle.length)) {
+      html += esc(s0.testo.slice(from, i)) + `<mark data-h="${n++}">${esc(s0.testo.slice(i, i + needle.length))}</mark>`;
+      from = i + needle.length;
+    }
+    body.innerHTML = html + esc(s0.testo.slice(from));
+    s0.hits = [...body.querySelectorAll('mark')];
+    s0.cur = -1;
+    if (n) txNext(1); else document.getElementById('txv-n').textContent = '0';
+  }
+  function txNext(dir) {
+    const s0 = st.tx;
+    if (!s0?.hits.length) return;
+    s0.hits[s0.cur]?.classList.remove('cur');
+    s0.cur = (s0.cur + dir + s0.hits.length) % s0.hits.length;
+    s0.hits[s0.cur].classList.add('cur');
+    s0.hits[s0.cur].scrollIntoView({ block: 'center' });
+    document.getElementById('txv-n').textContent = `${s0.cur + 1}/${s0.hits.length}`;
+  }
+  async function txCopy() {
+    if (st.tx?.testo == null) return;
+    try { await navigator.clipboard.writeText(st.tx.testo); toast('📋 Trascrizione copiata'); }
+    catch { toast('❌ Non riesco a copiare il testo'); }
+  }
+  function txEdit(on) {
+    const s0 = st.tx;
+    if (!s0 || s0.testo == null) return;
+    s0.editing = on;
+    const old = document.getElementById('txv-body');
+    const el = document.createElement(on ? 'textarea' : 'div');
+    el.id = 'txv-body'; el.className = 'txv-body';
+    if (on) el.value = s0.testo; else el.textContent = s0.testo;
+    old.replaceWith(el);
+    document.getElementById('txv-find').style.display = on ? 'none' : '';
+    document.getElementById('txv-q').value = '';
+    document.getElementById('txv-n').textContent = '';
+    txActs();
+    if (on) el.focus();
+  }
+  async function txSave() {
+    const s0 = st.tx;
+    if (!s0) return;
+    s0.testo = document.getElementById('txv-body').value;
+    await txPut({ id: s0.id, testo: s0.testo, up: false });
+    txEnqueue('up', s0.id, true);
+    txEdit(false);
+    toast('💾 Trascrizione salvata');
+  }
+  function txDel() {
+    if (!st.tx) return;
+    if (!st.txDelSure) { txActs(true); return; }
+    delTx(st.tx.id);
+    closeTx(); rerender(); renderArchivio();
+    toast('🗑️ Trascrizione eliminata');
   }
 
   // ── Gemini extraction ─────────────────────────────────────────
@@ -1909,6 +2593,7 @@ Regole:
       ${st.qFoto
         ? `<div class="flbl">Foto letta${st.qFoto.done ? '' : ' · verrà allegata a questo elemento'}</div>
            <img class="qfoto" src="${st.qFoto.url}" alt="">`
+        : st.qTxId ? rboxHtml(st.qTxId)
         : `<div class="flbl">${st.qScritto ? 'Testo scritto' : 'Testo trascritto'}</div>
            <div class="tbox">${esc(transcription)}</div>`}
       ${ctcHtml}
@@ -1978,6 +2663,7 @@ Regole:
       });
     }
     enqueue('up', tipo, id);
+    if (st.qTxId) linkTx(st.qTxId, tipo, id, cl.id);
     // La foto letta da Gemini va al primo elemento salvato
     if (st.qFoto && !st.qFoto.done) { st.qFoto.done = true; addFoto(tipo, id, st.qFoto.blob); }
     rerender();
@@ -2018,7 +2704,7 @@ Regole:
     }
     // Dettatura gestita del tutto: l'audio salvato non serve più
     const recId = st.qRec;
-    st.qRec = null; st.qFixed = null; setQFoto(null);
+    st.qRec = null; st.qFixed = null; st.qTxId = null; setQFoto(null);
     if (recId) recDel(recId).then(renderPending);
     closeModal();
     const n = st.qSaved;
@@ -2476,11 +3162,15 @@ Regole:
       .sort((a, b) => (a.data + (a.ora || '')).localeCompare(b.data + (b.ora || '')));
     const key = x => x.tipo === 'appuntamento' && x.data ? x.data + 'T' + (x.ora || '00:00') : (x.creato || '');
     const rest = items.filter(x => !fut.includes(x)).sort((a, b) => key(b).localeCompare(key(a)));
+    const txCli = txOfCli(c.id);
 
     el.innerHTML = `
       <div class="back-row">
         <button class="back-btn" onclick="A.go('clienti')">← Clienti</button>
-        <button class="icobtn" onclick="A.editCli('${c.id}')" title="Modifica">✏️</button>
+        <span style="display:flex;gap:4px">
+          <button class="icobtn" onclick="A.exportScheda('${c.id}')" title="Esporta scheda">📤</button>
+          <button class="icobtn" onclick="A.editCli('${c.id}')" title="Modifica">✏️</button>
+        </span>
       </div>
       <div class="cli-head">
         <div class="cli-top">
@@ -2498,11 +3188,184 @@ Regole:
           <button class="btn btn-pr" onclick="A.recFor('${c.id}')">🎙️  Registra</button>
           <button class="btn btn-pr" onclick="A.openWrite('${c.id}')">✍️  Scrivi</button>
           <button class="btn btn-pr" onclick="A.fotoMemo('${c.id}')">📷  Foto</button>
+          <button class="btn btn-pr" onclick="A.pickAudio('${c.id}')">🎧  Audio</button>
         </div>
       </div>
       ${fut.length ? `<div class="sec-lbl">Prossimi (${fut.length})</div>${fut.map(it => renderCard(it)).join('')}` : ''}
+      ${txCli.length ? `<div class="sec-lbl">Registrazioni (${txCli.length})</div><div style="padding:0 12px">${txCli.map(txRowHtml).join('')}</div>` : ''}
       <div class="sec-lbl">Storico (${rest.length})</div>
       ${rest.length ? rest.map(it => renderCard(it)).join('') : `<div class="empty" style="padding:24px"><div class="empty-txt">Ancora niente per questo cliente</div></div>`}`;
+  }
+
+  // ── Esporta scheda cliente (PDF o testo) ──────────────────────
+  function exportScheda(cid) {
+    const c = getCli(cid);
+    if (!c) return;
+    const nTx = txOfCli(cid).length;
+    openModal(`
+      <div class="sheet-title">📤 Esporta scheda</div>
+      <div class="flbl" style="font-size:16px;margin-bottom:8px">👤 ${esc(c.nome)}</div>
+      <label class="chk"><input type="checkbox" checked disabled> Anagrafica</label>
+      <label class="chk"><input type="checkbox" id="x-ele" checked> Appuntamenti, task e note</label>
+      <label class="chk"><input type="checkbox" id="x-foto" checked> Foto allegate (solo nel PDF)</label>
+      <label class="chk"><input type="checkbox" id="x-tx"${nTx ? '' : ' disabled'}> Trascrizioni complete delle registrazioni${nTx ? ` (${nTx})` : ' (nessuna)'}</label>
+      <div class="fg" style="margin-top:8px"><label class="flbl">Periodo</label>
+        <select class="finp" id="x-per" onchange="document.getElementById('x-custom').style.display = this.value === 'custom' ? '' : 'none'">
+          <option value="all">Tutto lo storico</option>
+          <option value="12">Ultimi 12 mesi</option>
+          <option value="3">Ultimi 3 mesi</option>
+          <option value="custom">Dal… al…</option>
+        </select></div>
+      <div class="row" id="x-custom" style="display:none">
+        <div class="fg"><label class="flbl">Dal</label><input type="date" class="finp" id="x-dal"></div>
+        <div class="fg"><label class="flbl">Al</label><input type="date" class="finp" id="x-al"></div>
+      </div>
+      <div class="btn-col">
+        <button class="btn btn-ok" onclick="A.exportPdf('${c.id}')">📄  PDF (salva o condividi)</button>
+        ${navigator.share ? `<button class="btn btn-pr" onclick="A.exportTesto('${c.id}', true)">📤  Condividi testo</button>` : ''}
+        <button class="btn btn-sec" onclick="A.exportTesto('${c.id}', false)">📋  Copia testo</button>
+      </div>`);
+  }
+
+  // Data locale (YYYY-MM-DD) di un elemento: giorno dell'appuntamento, altrimenti giorno di creazione
+  function dayOfIso(iso) {
+    const d = new Date(iso || '');
+    if (isNaN(d)) return '';
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  }
+  const dayOf = x => x.tipo === 'appuntamento' && x.data ? x.data : dayOfIso(x.creato);
+  function fmtFull(d) {
+    if (!d) return '';
+    const t = new Date(d + 'T00:00:00');
+    return isNaN(t) ? d : t.toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+  }
+
+  // Raccoglie quello che va nell'esportazione secondo le scelte della finestra
+  function exportDati(cid) {
+    const c = getCli(cid);
+    const chk = id => !!document.getElementById(id)?.checked;
+    const opt = { ele: chk('x-ele'), foto: chk('x-foto'), tx: chk('x-tx') };
+    const per = q('x-per') || 'all';
+    let dal = '', al = '', perLbl = 'tutto lo storico';
+    if (per === '12' || per === '3') {
+      const d = new Date(); d.setMonth(d.getMonth() - Number(per));
+      dal = dayOfIso(d.toISOString());
+      perLbl = per === '12' ? 'ultimi 12 mesi' : 'ultimi 3 mesi';
+    } else if (per === 'custom') {
+      dal = q('x-dal'); al = q('x-al');
+      perLbl = [dal ? 'dal ' + fmtFull(dal) : '', al ? 'al ' + fmtFull(al) : ''].filter(Boolean).join(' ') || 'tutto lo storico';
+    }
+    const inPer = day => (!dal || (day && day >= dal)) && (!al || (day && day <= al));
+    const today = localToday();
+    const items = opt.ele ? itemsOf(cid).filter(x => inPer(dayOf(x))) : [];
+    const fut = items.filter(x => x.tipo === 'appuntamento' && x.data >= today)
+      .sort((a, b) => (a.data + (a.ora || '')).localeCompare(b.data + (b.ora || '')));
+    const key = x => x.tipo === 'appuntamento' && x.data ? x.data + 'T' + (x.ora || '00:00') : (x.creato || '');
+    const storico = items.filter(x => !fut.includes(x)).sort((a, b) => key(b).localeCompare(key(a)));
+    const txs = opt.tx ? txOfCli(cid).filter(t => inPer(dayOfIso(t.creato))) : [];
+    return { c, opt, perLbl, fut, storico, txs };
+  }
+
+  function exportLabel(x) {
+    if (x.tipo === 'appuntamento')
+      return ['📅 APPUNTAMENTO', fmtFull(x.data), x.ora, x.luogo ? '📍 ' + x.luogo : ''].filter(Boolean).join(' · ');
+    if (x.tipo === 'task')
+      return [x.completato ? '✅ TASK FATTA' : '⏳ TASK DA FARE', 'creata ' + fmtFull(dayOfIso(x.creato)),
+              x.scadenza ? 'scadenza ' + fmtFull(x.scadenza) : '', x.priorita ? 'priorità ' + x.priorita : ''].filter(Boolean).join(' · ');
+    return '📝 NOTA · ' + fmtFull(dayOfIso(x.creato));
+  }
+  const txLabel = t => ['🎙️ ' + (t.titolo || 'Registrazione'), fmtFull(dayOfIso(t.creato)), fmtDurata(t.durata_sec)].filter(Boolean).join(' · ');
+
+  // Testi delle trascrizioni scelte (dal telefono o da Supabase)
+  async function exportTxTesti(txs) {
+    const out = new Map();
+    for (const t of txs) out.set(t.id, await getTxTesto(t.id));
+    return out;
+  }
+
+  async function exportTesto(cid, share) {
+    const d = exportDati(cid);
+    if (!d.c) return;
+    const testi = d.txs.length ? await exportTxTesti(d.txs) : new Map();
+    const c = d.c, L = [];
+    L.push('SCHEDA CLIENTE — ' + c.nome);
+    if (c.localita) L.push('Località: ' + c.localita);
+    if (c.azienda)  L.push('Azienda: ' + c.azienda);
+    if (c.telefono) L.push('Telefono: ' + c.telefono);
+    if (c.email)    L.push('Email: ' + c.email);
+    if (c.anagrafica_id) L.push('Collegato all\'anagrafica negozio');
+    L.push(`Esportata il ${fmtFull(localToday())} · Periodo: ${d.perLbl}`);
+    const block = x => { L.push(''); L.push(exportLabel(x)); if (x.descrizione) L.push(x.descrizione); };
+    if (d.opt.ele) {
+      if (d.fut.length) { L.push('', '══ PROSSIMI APPUNTAMENTI (' + d.fut.length + ') ══'); d.fut.forEach(block); }
+      L.push('', '══ STORICO (' + d.storico.length + ') ══');
+      if (d.storico.length) d.storico.forEach(block); else L.push('', 'Niente in questo periodo');
+    }
+    if (d.txs.length) {
+      L.push('', '══ TRASCRIZIONI COMPLETE (' + d.txs.length + ') ══');
+      for (const t of d.txs) { L.push('', txLabel(t)); L.push(testi.get(t.id) ?? '(testo non disponibile: serve la connessione)'); }
+    }
+    const text = L.join('\n');
+    if (share && navigator.share) {
+      try { await navigator.share({ title: 'Scheda ' + c.nome, text }); closeModal(); return; }
+      catch (e) { if (e.name === 'AbortError') return; }
+    }
+    try { await navigator.clipboard.writeText(text); closeModal(); toast('📋 Scheda copiata: incollala dove ti serve', 3500); }
+    catch { toast('❌ Non riesco a copiare il testo'); }
+  }
+
+  async function exportPdf(cid) {
+    const d = exportDati(cid);
+    if (!d.c) return;
+    toast('⏳ Preparo il PDF…', 8000);
+    const testi = d.txs.length ? await exportTxTesti(d.txs) : new Map();
+    const c = d.c;
+    const fotoHtml = async x => {
+      if (!d.opt.foto) return '';
+      const urls = [];
+      for (const a of fotosOf(x.id)) { const u = await fotoUrlOf(a.id); if (u) urls.push(u); }
+      return urls.length ? `<div class="pr-fotos">${urls.map(u => `<img src="${u}" alt="">`).join('')}</div>` : '';
+    };
+    const cls = { appuntamento: 'apt', task: 'task', nota: 'nota' };
+    const block = async x => `<div class="pr-item ${cls[x.tipo] || 'nota'}">
+        <div class="pr-hd">${esc(exportLabel(x))}</div>
+        ${x.descrizione ? `<div class="pr-desc">${esc(x.descrizione)}</div>` : ''}
+        ${await fotoHtml(x)}
+      </div>`;
+    const sub = [c.localita ? '📍 ' + c.localita : '', c.azienda ? '🏢 ' + c.azienda : '',
+                 c.telefono ? '📞 ' + c.telefono : '', c.email ? '✉️ ' + c.email : ''].filter(Boolean).join(' · ');
+    let html = `<div class="pr-name">${esc(c.nome)}</div>
+      ${sub ? `<div class="pr-sub">${esc(sub)}</div>` : ''}
+      ${c.anagrafica_id ? `<div class="pr-sub">🔗 Collegato all'anagrafica negozio</div>` : ''}
+      <div class="pr-gen">Scheda cliente MAYDAY · esportata il ${esc(fmtFull(localToday()))} · periodo: ${esc(d.perLbl)}</div>`;
+    if (d.opt.ele) {
+      if (d.fut.length) {
+        html += `<div class="pr-sec">Prossimi appuntamenti (${d.fut.length})</div>`;
+        for (const x of d.fut) html += await block(x);
+      }
+      html += `<div class="pr-sec">Storico (${d.storico.length})</div>`;
+      if (d.storico.length) for (const x of d.storico) html += await block(x);
+      else html += `<div class="pr-empty">Niente in questo periodo</div>`;
+    }
+    if (d.txs.length) {
+      html += `<div class="pr-sec">Trascrizioni complete (${d.txs.length})</div>`;
+      for (const t of d.txs) html += `<div class="pr-item rec"><div class="pr-hd">${esc(txLabel(t))}</div>
+        <div class="pr-tx">${esc(testi.get(t.id) ?? '(testo non disponibile: serve la connessione)')}</div></div>`;
+    }
+    const area = document.getElementById('print-area');
+    area.innerHTML = html;
+    // Aspetta che le foto siano pronte, altrimenti nel PDF resterebbero vuote
+    await Promise.all([...area.querySelectorAll('img')].map(i => i.decode().catch(() => {})));
+    closeModal();
+    const oldTitle = document.title;
+    // Il titolo della pagina diventa il nome del file PDF proposto dal telefono
+    document.title = `Scheda ${c.nome} ${localToday()}`.replace(/[\\/:*?"<>|]/g, ' ');
+    // L'area resta piena (è nascosta fuori dalla stampa): su Android "afterprint" può arrivare
+    // prima che il PDF sia stato creato, e svuotarla lo lascerebbe bianco
+    const restore = () => { document.title = oldTitle; window.removeEventListener('afterprint', restore); };
+    window.addEventListener('afterprint', restore);
+    toast('📄 Scegli "Salva come PDF" nella stampa', 4000);
+    setTimeout(() => window.print(), 300);
   }
 
   // ── Nuova / modifica scheda ───────────────────────────────────
@@ -2806,6 +3669,8 @@ Regole:
       ? `<button class="cal-btn" onclick="A.addToCal('${item.id}')">📅 Aggiungi a Calendar</button>`
       : '';
     const calMark = isApt && calOk(item) ? `<span class="cal-ok">✓ In Calendar</span>` : '';
+    const txN = tipo === 'nota' ? txOfNota(item.id) : null;
+    const txBtn = txN ? `<button class="cal-btn" onclick="A.openTx('${txN.id}')">📄 Trascrizione completa</button>` : '';
     // Nome cliente: toccabile se c'è la scheda (nella scheda stessa non serve ripeterlo)
     const cl = getCli(item.cliente_id);
     const cliHtml = st.view === 'cliente' && cl ? ''
@@ -2824,6 +3689,7 @@ Regole:
       ${thumbsHtml(item.id)}
       <div class="card-acts">
         ${calBtn}
+        ${txBtn}
         ${taskBtn}
         <button class="icobtn" onclick="A.fotoPer('${tipo}','${item.id}')" title="Aggiungi foto">📷</button>
         <button class="icobtn" onclick="A.moveItem('${item.id}','${tipo}')" title="Cliente">👤</button>
@@ -2847,6 +3713,15 @@ Regole:
   function delItem(id, tipo) {
     const card = document.getElementById('card-'+id);
     if (!card) return;
+    if (tipo === 'nota' && txOfNota(id)) {
+      card.innerHTML = `<div class="del-confirm" style="flex-wrap:wrap">
+        <span style="flex:1 0 100%;margin-bottom:6px">Eliminare la nota? Ha una trascrizione completa.</span>
+        <button style="background:var(--red);color:#fff" onclick="A.confirmDel('${id}','nota')">Solo la nota</button>
+        <button style="background:var(--red);color:#fff" onclick="A.confirmDel('${id}','nota',true)">Nota e trascrizione</button>
+        <button style="background:var(--bg3);color:var(--text)" onclick="A.rerender()">No</button>
+      </div>`;
+      return;
+    }
     card.innerHTML = `<div class="del-confirm">
       <span style="flex:1">Eliminare?</span>
       <button style="background:var(--red);color:#fff" onclick="A.confirmDel('${id}','${tipo}')">Sì</button>
@@ -2854,7 +3729,11 @@ Regole:
     </div>`;
   }
 
-  function confirmDel(id, tipo) {
+  function confirmDel(id, tipo, conTx) {
+    // La trascrizione collegata: si elimina, oppure resta nell'archivio (e nella scheda cliente)
+    const t = tipo === 'nota' ? txOfNota(id) : null;
+    if (t && conTx) delTx(t.id);
+    else if (t) { t.nota_id = null; txEnqueue('up', t.id, false); }
     if (tipo==='appuntamento') db.appointments=db.appointments.filter(x=>x.id!==id);
     else if (tipo==='task')    db.tasks=db.tasks.filter(x=>x.id!==id);
     else                       db.notes=db.notes.filter(x=>x.id!==id);
@@ -2865,7 +3744,7 @@ Regole:
   }
 
   function rerender() {
-    if (st.view==='home')   renderRecent();
+    if (st.view==='home')   { renderRecent(); renderArchivioBtn(); }
     if (st.view==='agenda') renderAppts(st.fA);
     if (st.view==='task')   renderTasks(st.fT);
     if (st.view==='note')   renderNotes(document.getElementById('note-search').value);
@@ -3069,20 +3948,26 @@ Regole:
       filling = true;
       try {
         const ids = new Set([...document.querySelectorAll('img[data-foto]:not([src])')].map(i => i.dataset.foto));
-        for (const id of ids) {
-          if (fotoUrls.has(id) || Date.now() - (fotoFail.get(id) || 0) < 60000) continue;
-          let blob = (await fotoGet(id))?.blob;
-          const a = findItem('allegato', id);
-          if (!blob && a && sb && user && navigator.onLine) {
-            const { data } = await sb.storage.from(BUCKET).download(`${user.id}/${a.nome}`).catch(() => ({}));
-            if (data) { blob = data; await fotoPut({ id, blob, up: true }); }
-          }
-          if (blob) fotoUrls.set(id, URL.createObjectURL(blob)); else fotoFail.set(id, Date.now());
-        }
+        for (const id of ids) await fotoUrlOf(id);
         for (const img of document.querySelectorAll('img[data-foto]:not([src])'))
           if (fotoUrls.has(img.dataset.foto)) img.src = fotoUrls.get(img.dataset.foto);
       } finally { filling = false; }
     }, 50);
+  }
+
+  // Indirizzo della foto: copia sul telefono se c'è, altrimenti la scarica da Supabase
+  async function fotoUrlOf(id) {
+    if (fotoUrls.has(id)) return fotoUrls.get(id);
+    if (Date.now() - (fotoFail.get(id) || 0) < 60000) return null;
+    let blob = (await fotoGet(id))?.blob;
+    const a = findItem('allegato', id);
+    if (!blob && a && sb && user && navigator.onLine) {
+      const { data } = await sb.storage.from(BUCKET).download(`${user.id}/${a.nome}`).catch(() => ({}));
+      if (data) { blob = data; await fotoPut({ id, blob, up: true }); }
+    }
+    if (!blob) { fotoFail.set(id, Date.now()); return null; }
+    fotoUrls.set(id, URL.createObjectURL(blob));
+    return fotoUrls.get(id);
   }
 
   function viewFoto(id) {
@@ -3257,7 +4142,7 @@ Regole:
   // Tocco fuori dalla scheda: se era una dettatura, l'audio resta tra quelle da elaborare
   function dismissModal() {
     closeModal();
-    st.qRec = null; st.qFixed = null; st.queue = []; st.qIdx = 0; st.qSaved = 0;
+    st.qRec = null; st.qFixed = null; st.queue = []; st.qIdx = 0; st.qSaved = 0; st.qTxId = null;
     st.pick = { ctx: 'inline', q: '' };
     setQFoto(null);
     st.editing = null;
@@ -3328,7 +4213,7 @@ Regole:
     openModal(`
       <div class="sheet-title">⚠️ Cancella tutti i dati</div>
       <p style="color:var(--dim);margin-bottom:18px;line-height:1.5;font-size:14px">
-        Verranno eliminati appuntamenti, task, note e schede clienti di MAYDAY, sul telefono e su Supabase.
+        Verranno eliminati appuntamenti, task, note, trascrizioni e schede clienti di MAYDAY, sul telefono e su Supabase.
         L'anagrafica clienti del negozio non viene toccata. L'azione non è reversibile.
       </p>
       <div class="btn-row">
@@ -3345,7 +4230,9 @@ Regole:
     }
     fdel.push(...db.allegati.map(a => a.nome)); saveFdel();
     fotoAll().then(l => l.forEach(f => fotoDel(f.id)));
-    db={clienti:[],appointments:[],tasks:[],notes:[],allegati:[]}; save(); saveOutbox(); sync();
+    for (const t of db.trascrizioni || []) { txOut = txOut.filter(o => o.id !== t.id); txOut.push({ op: 'del', id: t.id }); txDelL(t.id); }
+    saveTxOut();
+    db={clienti:[],appointments:[],tasks:[],notes:[],allegati:[],trascrizioni:[]}; save(); saveOutbox(); sync();
     closeModal(); rerender(); toast('🗑️ Dati eliminati');
   }
 
@@ -3378,13 +4265,20 @@ Regole:
   // ── Init ──────────────────────────────────────────────────────
   // Scorciatoie dell'icona (tieni premuto l'icona di MAYDAY): ./?go=rec|oggi|task|clienti
   function openShortcut() {
-    const sc = new URLSearchParams(window.location.search).get('go');
+    const params = new URLSearchParams(window.location.search);
+    const sc = params.get('go');
     if (!sc) return;
     history.replaceState(null, '', window.location.pathname);
     if (sc === 'oggi')    { go('agenda'); fAppt(document.querySelectorAll('#v-agenda .chip')[1], 'oggi'); }
     if (sc === 'task')    { go('task');   fTask(document.querySelectorAll('#v-task .chip')[1], 'pend'); }
     if (sc === 'clienti') go('clienti');
     if (sc === 'rec')     toggleRec();
+    if (sc === 'riunione') {
+      const p = params;
+      if (p.has('errore')) toast('❌ Non sono riuscito a ricevere il file audio', 5000);
+      else if (p.has('vuoto')) toast('⚠️ Nessun file audio ricevuto', 4000);
+      setTimeout(processCondivisi, 500);
+    }
   }
 
   function init() {
@@ -3394,6 +4288,7 @@ Regole:
     checkOAuthCallback();
     renderRecent();
     renderPending();
+    renderArchivioBtn();
     initAuth();
     setTimeout(maybeAskSchede, 2500);
     openShortcut();
@@ -3430,6 +4325,9 @@ Regole:
     anaOpen, gooOpen, linkAll, linkConfirm,
     createSchede, skipSchede,
     fotoPer, fotoMemo, onFoto, viewFoto, closeViewer, delFoto, voce,
+    exportScheda, exportPdf, exportTesto,
+    pickAudio, onAudio, setModello, avviaRiunione,
+    openArchivio, renderArchivio, openTx, closeTx, txFind, txNext, txCopy, txEdit, txSave, txDel,
     init,
   };
 })();
